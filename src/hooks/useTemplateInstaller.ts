@@ -10,14 +10,18 @@ export interface InstallProgress {
 
 export function useTemplateInstaller() {
   const [installedSlugs, setInstalledSlugs] = useState<Set<string>>(new Set());
+  const [installedTemplateIds, setInstalledTemplateIds] = useState<Set<string>>(new Set());
   const [installing, setInstalling] = useState<string | null>(null);
   const [progress, setProgress] = useState<InstallProgress | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchInstalled = useCallback(async () => {
     const { data } = await api.get('/api/installed_templates');
-    const list = (data || []) as string[];
-    setInstalledSlugs(new Set(Array.isArray(list) ? list : []));
+    const raw = data as { slugs?: string[]; ids?: string[] } | string[] | undefined;
+    const slugs = Array.isArray(raw) ? raw : (raw?.slugs ?? []);
+    const ids = Array.isArray(raw) ? [] : (raw?.ids ?? []);
+    setInstalledSlugs(new Set(slugs));
+    setInstalledTemplateIds(new Set(ids));
     setLoading(false);
   }, []);
 
@@ -142,5 +146,25 @@ export function useTemplateInstaller() {
     [installedSlugs]
   );
 
-  return { installedSlugs, installing, progress, loading, installTemplate, fetchInstalled };
+  const installTemplateById = useCallback(async (templateId: string) => {
+    if (installedTemplateIds.has(templateId)) return { success: false, error: 'Already installed' };
+    setInstalling(templateId);
+    setProgress({ step: 'Installing template...', current: 1, total: 1 });
+    try {
+      const { data, error } = await api.post('/api/templates/install', { template_id: templateId });
+      if (error || !data) throw new Error((data as any)?.error || error?.message || 'Install failed');
+      const result = data as { success?: boolean; modulesCreated?: number };
+      setInstalledTemplateIds((prev) => new Set(prev).add(templateId));
+      setInstalledSlugs((prev) => new Set(prev).add(templateId));
+      setInstalling(null);
+      setProgress(null);
+      return { success: true, modulesCreated: result.modulesCreated ?? 0 };
+    } catch (err: any) {
+      setInstalling(null);
+      setProgress(null);
+      return { success: false, error: err?.message || 'Install failed' };
+    }
+  }, [installedTemplateIds]);
+
+  return { installedSlugs, installedTemplateIds, installing, progress, loading, installTemplate, installTemplateById, fetchInstalled };
 }

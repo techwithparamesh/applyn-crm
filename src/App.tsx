@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/components/AuthProvider";
+import { TenantProvider } from "@/contexts/TenantContext";
 import { AppLayout } from "@/components/AppLayout";
 import { PermissionProvider } from "@/components/PermissionProvider";
 import Dashboard from "@/pages/Dashboard";
@@ -26,6 +27,11 @@ import IntegrationsPage from "@/pages/IntegrationsPage";
 import ReportsPage from "@/pages/ReportsPage";
 import ReportDetailPage from "@/pages/ReportDetailPage";
 import SettingsPage from "@/pages/SettingsPage";
+import ModuleBuilderPage from "@/pages/settings/ModuleBuilderPage";
+import SettingsUsersPage from "@/pages/settings/SettingsUsersPage";
+import SettingsTeamsPage from "@/pages/settings/SettingsTeamsPage";
+import SettingsRolesPage from "@/pages/settings/SettingsRolesPage";
+import SettingsPermissionsPage from "@/pages/settings/SettingsPermissionsPage";
 import DocsPage from "@/pages/DocsPage";
 import LoginPage from "@/pages/LoginPage";
 import SignupPage from "@/pages/SignupPage";
@@ -41,6 +47,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <TenantProvider>
           <PermissionProvider>
             <Routes>
               {/* Public routes */}
@@ -69,10 +76,16 @@ const App = () => (
               <Route path="/reports" element={<AppLayout><ReportsPage /></AppLayout>} />
               <Route path="/reports/:reportId" element={<AppLayout><ReportDetailPage /></AppLayout>} />
               <Route path="/settings" element={<AppLayout><SettingsPage /></AppLayout>} />
+              <Route path="/settings/modules" element={<AppLayout><ModuleBuilderPage /></AppLayout>} />
+              <Route path="/settings/users" element={<AppLayout><SettingsUsersPage /></AppLayout>} />
+              <Route path="/settings/teams" element={<AppLayout><SettingsTeamsPage /></AppLayout>} />
+              <Route path="/settings/roles" element={<AppLayout><SettingsRolesPage /></AppLayout>} />
+              <Route path="/settings/permissions" element={<AppLayout><SettingsPermissionsPage /></AppLayout>} />
               <Route path="/docs" element={<AppLayout><DocsPage /></AppLayout>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </PermissionProvider>
+          </TenantProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

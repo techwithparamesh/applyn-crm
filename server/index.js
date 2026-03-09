@@ -8,6 +8,8 @@ import multer from 'multer';
 import { getPool, uuid } from './db.js';
 import bcrypt from 'bcryptjs';
 import { authMiddleware, optionalAuth, signToken, registerUser, verifyPassword } from './auth.js';
+import { canUser, getUserPermissions } from './permissions.js';
+import { installTemplate as doInstallTemplate, createFromWorkspace as doCreateFromWorkspace } from './templateService.js';
 
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
@@ -38,17 +40,27 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 
 // ---------- Auth (no /api prefix; no auth middleware) ----------
 app.post('/auth/signup', async (req, res) => {
-  const { email, password, name } = req.body;
+  const { company_name, admin_name, email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   try {
-    const result = await registerUser(email, password, name);
+    const result = await registerUser({ company_name: company_name || '', admin_name: admin_name || '', email, password });
     if (result.error) return res.status(400).json({ error: result.error });
     const token = signToken(result.userId);
     const [prof] = await pool.execute(
       'SELECT id, user_id, tenant_id, name, email, avatar_url, status, phone, timezone, notifications_enabled FROM profiles WHERE user_id = ?',
       [result.userId]
     );
-    res.status(201).json({ token, user: prof[0] });
+    const user = prof[0];
+    const [tenRows] = await pool.execute('SELECT id, name, subdomain, plan FROM tenants WHERE id = ?', [result.tenantId]);
+    const tenant = tenRows[0] || null;
+    res.status(201).json({
+      token,
+      session_token: token,
+      user_id: result.userId,
+      tenant_id: result.tenantId,
+      user: user ? { ...user, tenant } : user,
+      tenant,
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -64,11 +76,24 @@ app.post('/auth/login', async (req, res) => {
     'SELECT id, user_id, tenant_id, name, email, avatar_url, status, phone, timezone, notifications_enabled FROM profiles WHERE user_id = ?',
     [userId]
   );
-  res.json({ token, user: prof[0] });
+  const user = prof[0];
+  const tenantId = user?.tenant_id || 't1';
+  const [tenRows] = await pool.execute('SELECT id, name, subdomain, plan FROM tenants WHERE id = ?', [tenantId]);
+  const tenant = tenRows[0] || null;
+  res.json({
+    token,
+    session_token: token,
+    user_id: userId,
+    tenant_id: tenantId,
+    user: user ? { ...user, tenant } : user,
+    tenant,
+  });
 });
 
-app.get('/auth/me', authMiddleware, (req, res) => {
-  res.json(req.profile);
+app.get('/auth/me', authMiddleware, async (req, res) => {
+  const [tenRows] = await pool.execute('SELECT id, name, subdomain, plan FROM tenants WHERE id = ?', [req.tenantId]);
+  const tenant = tenRows[0] || null;
+  res.json({ ...req.profile, tenant });
 });
 
 app.post('/auth/change-password', authMiddleware, async (req, res) => {
@@ -115,16 +140,81 @@ function rowsToCamel(rows) {
 // ---------- Auth required for /api ----------
 app.use('/api', authMiddleware);
 
-// ---------- CRM Records ----------
+// ---------- Dashboard KPIs (tenant-scoped) ----------
+app.get('/api/dashboard/kpis', async (req, res) => {
+  const tenantId = req.tenantId;
+  try {
+    const [modRows] = await pool.execute(
+      "SELECT id, slug FROM modules WHERE tenant_id = ? AND slug IN ('leads', 'deals')",
+      [tenantId]
+    );
+    const bySlug = {};
+    modRows.forEach((r) => { bySlug[r.slug] = r.id; });
+    const leadsModuleId = bySlug.leads || null;
+    const dealsModuleId = bySlug.deals || null;
+
+    let total_leads = 0;
+    let active_deals = 0;
+    let revenue = 0;
+
+    if (leadsModuleId) {
+      const [r] = await pool.execute(
+        'SELECT COUNT(*) AS c FROM crm_records WHERE tenant_id = ? AND module_id = ? AND (deleted_at IS NULL OR deleted_at = 0)',
+        [tenantId, leadsModuleId]
+      );
+      total_leads = r[0]?.c ?? 0;
+    }
+
+    if (dealsModuleId) {
+      const [r] = await pool.execute(
+        'SELECT COUNT(*) AS c FROM crm_records WHERE tenant_id = ? AND module_id = ? AND (deleted_at IS NULL OR deleted_at = 0)',
+        [tenantId, dealsModuleId]
+      );
+      active_deals = r[0]?.c ?? 0;
+      const [sumRows] = await pool.execute(
+        `SELECT SUM(CAST(JSON_UNQUOTE(JSON_EXTRACT(\`values\`, '$.amount')) AS DECIMAL(15,2))) AS s FROM crm_records WHERE tenant_id = ? AND module_id = ? AND (deleted_at IS NULL OR deleted_at = 0) AND JSON_EXTRACT(\`values\`, '$.amount') IS NOT NULL`,
+        [tenantId, dealsModuleId]
+      );
+      revenue = Number(sumRows[0]?.s) || 0;
+    }
+
+    const [taskRows] = await pool.execute(
+      'SELECT COUNT(*) AS c FROM tasks WHERE tenant_id = ? AND DATE(due_date) = CURDATE()',
+      [tenantId]
+    );
+    const tasks_due_today = taskRows[0]?.c ?? 0;
+
+    res.json({ total_leads, active_deals, revenue, tasks_due_today });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---------- CRM Records (owner_user_id, visibility: private | team | organization) ----------
 app.get('/api/crm_records', async (req, res) => {
   try {
     const { module_id, limit = 50, offset = 0 } = req.query;
-    let sql = 'SELECT * FROM crm_records WHERE tenant_id = ? AND deleted_at IS NULL';
+    let sql = 'SELECT * FROM crm_records WHERE tenant_id = ? AND (deleted_at IS NULL OR deleted_at = 0)';
     const params = [req.tenantId];
+    sql += ` AND (COALESCE(visibility,'organization') = 'organization' OR (COALESCE(visibility,'organization') = 'private' AND owner_user_id = ?) OR (COALESCE(visibility,'organization') = 'team' AND (owner_user_id = ? OR owner_user_id IN (SELECT user_id FROM team_members WHERE team_id IN (SELECT team_id FROM team_members WHERE user_id = ?) AND user_id IS NOT NULL))))`;
+    params.push(req.userId, req.userId, req.userId);
     if (module_id) { sql += ' AND module_id = ?'; params.push(module_id); }
     sql += ' ORDER BY updated_at DESC LIMIT ? OFFSET ?';
     params.push(parseInt(limit, 10) || 50, parseInt(offset, 10) || 0);
-    const [rows] = await pool.execute(sql, params);
+    let rows;
+    try {
+      [rows] = await pool.execute(sql, params);
+    } catch (colErr) {
+      if (colErr.code === 'ER_BAD_FIELD_ERROR') {
+        const fallback = module_id
+          ? 'SELECT * FROM crm_records WHERE tenant_id = ? AND deleted_at IS NULL AND module_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?'
+          : 'SELECT * FROM crm_records WHERE tenant_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT ? OFFSET ?';
+        const p = [req.tenantId];
+        if (module_id) p.push(module_id);
+        p.push(parseInt(limit, 10) || 50, parseInt(offset, 10) || 0);
+        [rows] = await pool.execute(fallback, p);
+      } else throw colErr;
+    }
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -138,25 +228,37 @@ app.get('/api/crm_records/:id', async (req, res) => {
 });
 
 app.post('/api/crm_records', async (req, res) => {
-  const { module_id, values, created_by } = req.body;
+  const { module_id, values, created_by, owner_user_id, visibility = 'organization' } = req.body;
   if (!module_id || values === undefined) return res.status(400).json({ error: 'module_id and values required' });
   const id = uuid();
-  await pool.execute(
-    'INSERT INTO crm_records (id, tenant_id, module_id, `values`, created_by) VALUES (?, ?, ?, ?, ?)',
-    [id, req.tenantId, module_id, JSON.stringify(values || {}), created_by || 'User']
-  );
+  const vis = ['private', 'team', 'organization'].includes(visibility) ? visibility : 'organization';
+  try {
+    await pool.execute(
+      'INSERT INTO crm_records (id, tenant_id, module_id, owner_user_id, visibility, `values`, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [id, req.tenantId, module_id, owner_user_id || null, vis, JSON.stringify(values || {}), created_by || 'User']
+    );
+  } catch (e) {
+    if (e.code === 'ER_BAD_FIELD_ERROR') {
+      await pool.execute(
+        'INSERT INTO crm_records (id, tenant_id, module_id, `values`, created_by) VALUES (?, ?, ?, ?, ?)',
+        [id, req.tenantId, module_id, JSON.stringify(values || {}), created_by || 'User']
+      );
+    } else throw e;
+  }
   const [r] = await pool.execute('SELECT * FROM crm_records WHERE id = ?', [id]);
   res.status(201).json(r[0]);
 });
 
 app.patch('/api/crm_records/:id', async (req, res) => {
-  const { values, deleted_at } = req.body;
+  const { values, deleted_at, owner_user_id, visibility } = req.body;
   const [r] = await pool.execute('SELECT id FROM crm_records WHERE id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
   if (!r.length) return res.status(404).json({ error: 'Not found' });
   const updates = [];
   const params = [];
   if (values !== undefined) { updates.push('`values` = ?'); params.push(JSON.stringify(values)); }
   if (deleted_at !== undefined) { updates.push('deleted_at = ?'); params.push(deleted_at); }
+  if (owner_user_id !== undefined) { updates.push('owner_user_id = ?'); params.push(owner_user_id || null); }
+  if (visibility !== undefined && ['private', 'team', 'organization'].includes(visibility)) { updates.push('visibility = ?'); params.push(visibility); }
   if (!updates.length) return res.json(r[0]);
   params.push(req.params.id, req.tenantId);
   await pool.execute(`UPDATE crm_records SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ?`, params);
@@ -235,10 +337,10 @@ app.get('/api/module_fields', async (req, res) => {
 
 app.post('/api/module_fields', async (req, res) => {
   const id = uuid();
-  const { module_id, name, label, field_type = 'text', is_required = false, options_json, order_index = 0 } = req.body;
+  const { module_id, name, label, field_type = 'text', is_required = false, options_json, settings_json, order_index = 0 } = req.body;
   await pool.execute(
-    'INSERT INTO module_fields (id, module_id, tenant_id, name, label, field_type, is_required, options_json, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [id, module_id, req.tenantId, name, label, field_type, is_required ? 1 : 0, options_json ? JSON.stringify(options_json) : null, order_index]
+    'INSERT INTO module_fields (id, module_id, tenant_id, name, label, field_type, is_required, options_json, settings_json, order_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, module_id, req.tenantId, name, label, field_type, is_required ? 1 : 0, options_json ? JSON.stringify(options_json) : null, settings_json ? JSON.stringify(settings_json) : null, order_index]
   );
   const [r] = await pool.execute('SELECT * FROM module_fields WHERE id = ?', [id]);
   res.status(201).json(r[0]);
@@ -247,13 +349,15 @@ app.post('/api/module_fields', async (req, res) => {
 app.patch('/api/module_fields/:id', async (req, res) => {
   const [existing] = await pool.execute('SELECT id FROM module_fields WHERE id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
   if (!existing.length) return res.status(404).json({ error: 'Not found' });
-  const allowed = ['name', 'label', 'field_type', 'is_required', 'options_json', 'order_index'];
+  const allowed = ['name', 'label', 'field_type', 'is_required', 'options_json', 'settings_json', 'order_index'];
   const updates = [];
   const params = [];
   for (const k of allowed) {
     if (req.body[k] !== undefined) {
       updates.push(`${k} = ?`);
-      params.push(k === 'is_required' ? (req.body[k] ? 1 : 0) : (k === 'options_json' && req.body[k] != null ? JSON.stringify(req.body[k]) : req.body[k]));
+      const val = k === 'is_required' ? (req.body[k] ? 1 : 0)
+        : (k === 'options_json' || k === 'settings_json') && req.body[k] != null ? JSON.stringify(req.body[k]) : req.body[k];
+      params.push(val);
     }
   }
   if (!updates.length) return res.json(existing[0]);
@@ -267,6 +371,19 @@ app.delete('/api/module_fields/:id', async (req, res) => {
   const [r] = await pool.execute('DELETE FROM module_fields WHERE id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
   if (r.affectedRows === 0) return res.status(404).json({ error: 'Not found' });
   res.json({ deleted: true });
+});
+
+// ---------- Permission check (canUser) ----------
+app.get('/api/can', async (req, res) => {
+  const { permission } = req.query;
+  if (!permission) return res.status(400).json({ error: 'permission query required (e.g. leads:view)' });
+  const allowed = await canUser(req.userId, String(permission));
+  res.json({ can: !!allowed });
+});
+
+app.get('/api/permissions', async (req, res) => {
+  const list = await getUserPermissions(req.userId);
+  res.json(list);
 });
 
 // ---------- Profiles & Tenants (for AuthProvider) ----------
@@ -816,8 +933,16 @@ app.get('/api/team_members', async (req, res) => {
 
 app.post('/api/team_members', async (req, res) => {
   const id = uuid();
-  const { team_id, profile_id } = req.body;
-  await pool.execute('INSERT INTO team_members (id, team_id, profile_id) VALUES (?, ?, ?)', [id, team_id, profile_id]);
+  const { team_id, profile_id, user_id, role } = req.body;
+  const uid = user_id || null;
+  const pid = profile_id || null;
+  try {
+    await pool.execute('INSERT INTO team_members (id, team_id, user_id, profile_id, role) VALUES (?, ?, ?, ?, ?)', [id, team_id, uid, pid, role || 'member']);
+  } catch (e) {
+    if (e.code === 'ER_BAD_FIELD_ERROR') {
+      await pool.execute('INSERT INTO team_members (id, team_id, profile_id) VALUES (?, ?, ?)', [id, team_id, profile_id]);
+    } else throw e;
+  }
   const [r] = await pool.execute('SELECT * FROM team_members WHERE id = ?', [id]);
   res.status(201).json(r[0]);
 });
@@ -837,11 +962,22 @@ app.get('/api/invitations', async (req, res) => {
 app.post('/api/invitations', async (req, res) => {
   const id = uuid();
   const token = crypto.randomBytes(32).toString('hex');
-  const { email, role_id } = req.body;
+  const { email, name, role_id, team_id } = req.body;
+  const invited_by = req.profile?.name || req.userId || '';
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 7);
-  await pool.execute('INSERT INTO invitations (id, tenant_id, email, role_id, token, expires_at) VALUES (?, ?, ?, ?, ?, ?)', [id, req.tenantId, email, role_id || null, token, expiresAt]);
+  try {
+    await pool.execute(
+      'INSERT INTO invitations (id, tenant_id, email, name, role_id, team_id, token, expires_at, invited_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, req.tenantId, email, name || null, role_id || null, team_id || null, token, expiresAt, invited_by]
+    );
+  } catch (e) {
+    if (e.code === 'ER_BAD_FIELD_ERROR') {
+      await pool.execute('INSERT INTO invitations (id, tenant_id, email, role_id, token, expires_at, invited_by) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, req.tenantId, email, role_id || null, token, expiresAt, invited_by]);
+    } else throw e;
+  }
   const [r] = await pool.execute('SELECT * FROM invitations WHERE id = ?', [id]);
+  // TODO: Send invitation email (e.g. nodemailer) with link containing token; accept flow sets password and creates profile
   res.status(201).json(r[0]);
 });
 
@@ -879,15 +1015,87 @@ app.delete('/api/record_tags', async (req, res) => {
 
 // ---------- Installed templates ----------
 app.get('/api/installed_templates', async (req, res) => {
-  const [rows] = await pool.execute('SELECT template_slug FROM installed_templates WHERE tenant_id = ?', [req.tenantId]);
-  res.json(rows.map(r => r.template_slug));
+  try {
+    const [rows] = await pool.execute('SELECT template_slug, template_id FROM installed_templates WHERE tenant_id = ?', [req.tenantId]);
+    const slugs = rows.map(r => r.template_slug);
+    const ids = (rows.map(r => r.template_id).filter(Boolean));
+    res.json({ slugs, ids });
+  } catch (e) {
+    const [rows] = await pool.execute('SELECT template_slug FROM installed_templates WHERE tenant_id = ?', [req.tenantId]);
+    res.json({ slugs: rows.map(r => r.template_slug), ids: [] });
+  }
 });
 
 app.post('/api/installed_templates', async (req, res) => {
   const id = uuid();
-  const { template_slug, template_name } = req.body;
-  await pool.execute('INSERT INTO installed_templates (id, tenant_id, template_slug, template_name) VALUES (?, ?, ?, ?)', [id, req.tenantId, template_slug, template_name]);
+  const { template_slug, template_name, template_id } = req.body;
+  try {
+    await pool.execute('INSERT INTO installed_templates (id, tenant_id, template_slug, template_name, template_id) VALUES (?, ?, ?, ?, ?)', [id, req.tenantId, template_slug, template_name, template_id || null]);
+  } catch (e) {
+    if (e.code === 'ER_BAD_FIELD_ERROR') {
+      await pool.execute('INSERT INTO installed_templates (id, tenant_id, template_slug, template_name) VALUES (?, ?, ?, ?)', [id, req.tenantId, template_slug, template_name]);
+    } else throw e;
+  }
   res.status(201).json({ id });
+});
+
+// ---------- Template Engine & Marketplace ----------
+app.get('/api/template_categories', async (req, res) => {
+  try {
+    const [rows] = await pool.execute('SELECT * FROM template_categories ORDER BY order_index, name');
+    res.json(rows);
+  } catch (e) {
+    res.json([]);
+  }
+});
+
+app.get('/api/templates', async (req, res) => {
+  try {
+    const { category_id, search } = req.query;
+    let sql = 'SELECT t.*, c.name AS category_name FROM crm_templates t LEFT JOIN template_categories c ON c.id = t.category_id WHERE t.is_public = 1';
+    const params = [];
+    if (category_id) { sql += ' AND t.category_id = ?'; params.push(category_id); }
+    if (search && String(search).trim()) { sql += ' AND (t.name LIKE ? OR t.description LIKE ?)'; const term = '%' + String(search).trim() + '%'; params.push(term, term); }
+    sql += ' ORDER BY t.name';
+    const [rows] = await pool.execute(sql, params);
+    res.json(rows);
+  } catch (e) {
+    res.json([]);
+  }
+});
+
+app.get('/api/templates/:id', async (req, res) => {
+  try {
+    const [rows] = await pool.execute('SELECT t.*, c.name AS category_name FROM crm_templates t LEFT JOIN template_categories c ON c.id = t.category_id WHERE t.id = ?', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    const [mods] = await pool.execute('SELECT * FROM template_modules WHERE template_id = ? ORDER BY order_index', [req.params.id]);
+    res.json({ ...rows[0], modules: mods });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/templates/install', async (req, res) => {
+  const { template_id } = req.body;
+  if (!template_id) return res.status(400).json({ error: 'template_id required' });
+  try {
+    const result = await doInstallTemplate(template_id, req.tenantId);
+    res.json(result);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/templates/create-from-workspace', async (req, res) => {
+  const { workspace_id, template_name, category_id, description } = req.body;
+  const tenantId = workspace_id || req.tenantId;
+  if (!template_name || !String(template_name).trim()) return res.status(400).json({ error: 'template_name required' });
+  try {
+    const result = await doCreateFromWorkspace(tenantId, { template_name: template_name.trim(), category_id: category_id || null, description: description || null });
+    res.status(201).json(result);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 // ---------- Email (minimal for hooks) ----------

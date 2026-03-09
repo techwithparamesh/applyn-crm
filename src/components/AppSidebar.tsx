@@ -11,6 +11,7 @@ import {
   Mail,
   MessageCircle,
   Plug,
+  Settings,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -34,20 +35,26 @@ import { useWhatsAppAccount } from "@/hooks/useWhatsApp";
 const mainNav = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Modules", url: "/modules", icon: Boxes },
-  { title: "Templates", url: "/templates", icon: FileStack },
   { title: "Pipelines", url: "/pipelines", icon: GitBranch },
   { title: "Relationships", url: "/relationships", icon: Link2 },
 ];
 
-const workNav = [
+const commNav = [
+  { title: "Email", url: "/email", icon: Mail },
+  { title: "WhatsApp", url: "/whatsapp", icon: MessageCircle, showStatus: true },
+];
+
+const workspaceNav = [
   { title: "Tasks", url: "/tasks", icon: CheckSquare },
   { title: "Automations", url: "/automations", icon: Zap },
   { title: "Forms", url: "/forms", icon: FileText },
   { title: "Reports", url: "/reports", icon: BarChart3 },
 ];
 
-const bottomNav = [
+const systemNav = [
+  { title: "Templates", url: "/templates", icon: FileStack },
   { title: "Integrations", url: "/integrations", icon: Plug },
+  { title: "Settings", url: "/settings", icon: Settings },
 ];
 
 export function AppSidebar() {
@@ -97,6 +104,9 @@ export function AppSidebar() {
 
       <SidebarContent className="px-2">
         <SidebarGroup>
+          {!collapsed && (
+            <p className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Main</p>
+          )}
           <SidebarGroupContent>
             <SidebarMenu>{renderNavItems(mainNav)}</SidebarMenu>
           </SidebarGroupContent>
@@ -106,31 +116,22 @@ export function AppSidebar() {
 
         <SidebarGroup>
           {!collapsed && (
-            <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">Communication</p>
+            <p className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Communication</p>
           )}
           <SidebarGroupContent>
             <SidebarMenu>
-              {/* Email */}
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive("/email")}>
-                  <NavLink to="/email" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-sidebar-accent" activeClassName="bg-sidebar-accent text-sidebar-accent-foreground">
-                    <Mail className="h-4 w-4 shrink-0" />
-                    {!collapsed && <span>Email</span>}
-                  </NavLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              {/* WhatsApp with connection status */}
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={isActive("/whatsapp")}>
-                  <NavLink to="/whatsapp" className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-sidebar-accent" activeClassName="bg-sidebar-accent text-sidebar-accent-foreground">
-                    <MessageCircle className="h-4 w-4 shrink-0" />
+              {commNav.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild isActive={item.url === "/whatsapp" ? isActive("/whatsapp") : isActive(item.url)}>
+                    <NavLink to={item.url} className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors hover:bg-sidebar-accent" activeClassName="bg-sidebar-accent text-sidebar-accent-foreground">
+                    <item.icon className="h-4 w-4 shrink-0" />
                     {!collapsed && (
                       <span className="flex items-center gap-2 flex-1">
-                        WhatsApp
-                        {account?.is_connected ? (
+                        {item.title}
+                        {item.showStatus && account?.is_connected && (
                           <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" title="Connected" />
-                        ) : (
+                        )}
+                        {item.showStatus && !account?.is_connected && (
                           <span className="text-[10px] text-amber-500 shrink-0" title="Not Connected">⚠</span>
                         )}
                       </span>
@@ -138,6 +139,7 @@ export function AppSidebar() {
                   </NavLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -146,16 +148,27 @@ export function AppSidebar() {
 
         <SidebarGroup>
           {!collapsed && (
-            <p className="px-3 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wider">Workspace</p>
+            <p className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Workspace</p>
           )}
           <SidebarGroupContent>
-            <SidebarMenu>{renderNavItems(workNav)}</SidebarMenu>
+            <SidebarMenu>{renderNavItems(workspaceNav)}</SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <div className="mx-3 my-2 h-px bg-sidebar-border" />
+
+        <SidebarGroup>
+          {!collapsed && (
+            <p className="px-3 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">System</p>
+          )}
+          <SidebarGroupContent>
+            <SidebarMenu>{renderNavItems(systemNav)}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter className="px-2 pb-4">
-        <SidebarMenu>{renderNavItems(bottomNav)}</SidebarMenu>
+        <SidebarMenu />
         {!collapsed ? (
           <UserMenu />
         ) : (

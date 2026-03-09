@@ -8,6 +8,13 @@ This folder contains the **MySQL 8+** schema and migration docs for Applyn CRM, 
 |------|-------------|
 | **mysql_schema.sql** | Full MySQL schema: all `CREATE TABLE` statements in dependency order, with indexes and foreign keys. No RLS; tenant isolation is application-level. |
 | **mysql_setup.md** | Setup guide: create DB, run schema, env vars, connection examples, replacing RLS and Postgres functions (`search_records`, `check_permission`, `get_user_tenant_id`), JSON usage, UUIDs. |
+| **migrations/001_add_field_settings_and_form_tables.sql** | Adds `settings_json` to `module_fields`, and optional `web_forms`, `form_sections`, `form_fields` tables. Run once after initial schema. |
+| **migrations/002_multi_tenant_saas.sql** | Multi-tenant SaaS: `tenants` (subdomain, plan, updated_at), `users` (tenant_id, role), `dashboard_widgets` (position_x/y, width, height). Run once for existing DBs; new installs use updated mysql_schema.sql. |
+| **migrations/003_workspace_organization.sql** | Workspace organization: `permissions` (name, description), `team_members` (user_id, role), `invitations` (name, team_id), `users` (status), `crm_records` (owner_user_id, visibility). Run once for existing DBs. |
+| **migrations/004_template_engine.sql** | Template engine & marketplace: `template_categories`, `crm_templates`, `template_modules`, `template_fields`, `template_pipelines`, `template_pipeline_stages`, `template_forms`, `template_form_fields`. Run once for new installs or after schema. |
+| **seed_default_modules.sql** | Seeds default CRM modules (Leads, Contacts, Deals, Tasks) and their fields for tenant `t1`. Run once per tenant after schema. |
+| **seed_templates.sql** | Seeds template categories and one Sales CRM template (modules, fields, pipeline stages). Run once after 004_template_engine. |
+| **MODULE_BUILDER_ARCHITECTURE.md** | Dynamic CRM Module Builder: multi-tenant architecture, modules, fields, records, pipelines, forms. |
 | **MIGRATION_NOTES.md** | Migration reference: full table list, type conversions, removed features, example query conversions (Supabase client → MySQL parameterized SQL), and FK summary. |
 | **examples/api-records-mysql.example.js** | Example Node.js (Express + mysql2) replacement for the Supabase api-records edge function: X-API-Key auth and CRUD on `crm_records` with tenant scoping. |
 

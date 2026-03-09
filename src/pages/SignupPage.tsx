@@ -10,7 +10,8 @@ import { useAuth } from '@/components/AuthProvider';
 import { getApiBase } from '@/lib/api';
 
 export default function SignupPage() {
-  const [name, setName] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [adminName, setAdminName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -33,7 +34,12 @@ export default function SignupPage() {
       const res = await fetch(`${getApiBase()}/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name: name || undefined }),
+        body: JSON.stringify({
+          company_name: companyName.trim() || undefined,
+          admin_name: adminName.trim() || undefined,
+          email: email.trim(),
+          password,
+        }),
       });
       const data = await res.json();
       setLoading(false);
@@ -41,7 +47,7 @@ export default function SignupPage() {
         toast({ title: 'Signup failed', description: data.error || res.statusText, variant: 'destructive' });
         return;
       }
-      signIn(data.token, data.user);
+      signIn(data.token, data.user, data.tenant);
     } catch (err) {
       setLoading(false);
       toast({ title: 'Signup failed', description: 'Network error', variant: 'destructive' });
@@ -55,14 +61,25 @@ export default function SignupPage() {
           <div className="mx-auto mb-4 h-12 w-12 rounded-xl bg-primary flex items-center justify-center">
             <UserPlus className="h-6 w-6 text-primary-foreground" />
           </div>
-          <CardTitle className="text-2xl">Create your account</CardTitle>
-          <CardDescription>Get started with your CRM workspace</CardDescription>
+          <CardTitle className="text-2xl">Create your workspace</CardTitle>
+          <CardDescription>Each company gets its own isolated CRM. Sign up to create your tenant.</CardDescription>
         </CardHeader>
         <form onSubmit={handleSignup}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Full Name</Label>
-              <Input id="name" placeholder="John Doe" value={name} onChange={e => setName(e.target.value)} />
+              <Label htmlFor="company_name">Company name</Label>
+              <Input
+                id="company_name"
+                placeholder="ABC Financial"
+                value={companyName}
+                onChange={e => setCompanyName(e.target.value)}
+                className="pl-9"
+              />
+              <p className="text-xs text-muted-foreground">Your workspace name. Subdomain will be derived from this.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="admin_name">Your name (admin)</Label>
+              <Input id="admin_name" placeholder="John Doe" value={adminName} onChange={e => setAdminName(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
@@ -80,7 +97,7 @@ export default function SignupPage() {
           <CardFooter className="flex flex-col gap-3">
             <Button type="submit" className="w-full" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create Account
+              Create workspace
             </Button>
             <p className="text-sm text-muted-foreground">
               Already have an account?{' '}

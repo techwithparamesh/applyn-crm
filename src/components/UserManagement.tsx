@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Separator } from '@/components/ui/separator';
-import { useProfiles, useInvitations, Profile } from '@/hooks/useUserManagement';
+import { useProfiles, useInvitations, useTeams, Profile } from '@/hooks/useUserManagement';
 import { useRBAC } from '@/hooks/useRBAC';
 import { useToast } from '@/hooks/use-toast';
 
@@ -31,12 +31,15 @@ function getInitials(name: string) {
 export function UserManagement() {
   const { profiles, loading, updateProfile, deleteProfile } = useProfiles();
   const { invitations, createInvitation, deleteInvitation } = useInvitations();
+  const { teams } = useTeams();
   const { roles } = useRBAC();
   const { toast } = useToast();
 
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteName, setInviteName] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRoleId, setInviteRoleId] = useState('');
+  const [inviteTeamId, setInviteTeamId] = useState('');
   const [search, setSearch] = useState('');
 
   const filteredProfiles = profiles.filter(p =>
@@ -48,12 +51,17 @@ export function UserManagement() {
 
   const handleInvite = async () => {
     if (!inviteEmail.trim()) return;
-    const inv = await createInvitation(inviteEmail.trim(), inviteRoleId || undefined);
+    const inv = await createInvitation(inviteEmail.trim(), inviteRoleId || undefined, {
+      name: inviteName.trim() || undefined,
+      team_id: inviteTeamId || undefined,
+    });
     if (inv) {
-      toast({ title: 'Invitation sent', description: `Invite sent to ${inviteEmail}` });
+      toast({ title: 'Invitation sent', description: `Invite sent to ${inviteEmail}. They will receive an email to join the workspace.` });
       setInviteOpen(false);
+      setInviteName('');
       setInviteEmail('');
       setInviteRoleId('');
+      setInviteTeamId('');
     }
   };
 
@@ -77,6 +85,7 @@ export function UserManagement() {
           <DialogContent className="sm:max-w-md">
             <DialogHeader><DialogTitle>Invite User</DialogTitle></DialogHeader>
             <div className="space-y-4 pt-2">
+              <div><Label>Name (optional)</Label><Input value={inviteName} onChange={e => setInviteName(e.target.value)} placeholder="Jane Doe" /></div>
               <div><Label>Email Address</Label><Input value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="user@company.com" type="email" /></div>
               <div>
                 <Label>Role (optional)</Label>
@@ -84,6 +93,15 @@ export function UserManagement() {
                   <SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger>
                   <SelectContent>
                     {roles.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Team (optional)</Label>
+                <Select value={inviteTeamId} onValueChange={setInviteTeamId}>
+                  <SelectTrigger><SelectValue placeholder="Select team" /></SelectTrigger>
+                  <SelectContent>
+                    {(teams || []).map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

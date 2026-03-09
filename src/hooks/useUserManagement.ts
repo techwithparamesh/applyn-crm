@@ -26,7 +26,9 @@ export interface Invitation {
   id: string;
   tenant_id: string;
   email: string;
+  name?: string | null;
   role_id: string | null;
+  team_id?: string | null;
   token: string;
   expires_at: string;
   accepted: boolean;
@@ -164,7 +166,9 @@ export function useInvitations() {
         id: row.id,
         tenant_id: row.tenant_id,
         email: row.email,
+        name: row.name,
         role_id: row.role_id,
+        team_id: row.team_id,
         token: row.token,
         expires_at: row.expires_at,
         accepted: row.accepted,
@@ -179,8 +183,13 @@ export function useInvitations() {
     fetchInvitations();
   }, [fetchInvitations]);
 
-  const createInvitation = useCallback(async (email: string, roleId?: string) => {
-    const { data, error } = await api.post('/api/invitations', { email, role_id: roleId || null });
+  const createInvitation = useCallback(async (email: string, roleId?: string, options?: { name?: string; team_id?: string }) => {
+    const { data, error } = await api.post('/api/invitations', {
+      email,
+      role_id: roleId || null,
+      name: options?.name || null,
+      team_id: options?.team_id || null,
+    });
     if (data) {
       const d = data as any;
       setInvitations((prev) => [
@@ -188,7 +197,9 @@ export function useInvitations() {
           id: d.id,
           tenant_id: d.tenant_id,
           email: d.email,
+          name: d.name,
           role_id: d.role_id,
+          team_id: d.team_id,
           token: d.token,
           expires_at: d.expires_at,
           accepted: d.accepted,

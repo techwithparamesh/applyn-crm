@@ -1,10 +1,15 @@
-import { useState, useRef, useEffect } from 'react';
-import { Search, Bell, Check, X, UserPlus, GitBranch, Zap, FileText, CheckSquare, ArrowRight, LogOut, HelpCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Search, Bell, Check, X, UserPlus, GitBranch, Zap, FileText, CheckSquare, LogOut, HelpCircle, Plus, Handshake, Mail } from 'lucide-react';
 import { SidebarTrigger } from '@/components/ui/sidebar';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useNotifications } from '@/hooks/useNotifications';
 import { NotificationType } from '@/lib/notification-types';
 import { GlobalSearchModal } from '@/components/GlobalSearchModal';
@@ -62,6 +67,34 @@ export function AppHeader() {
       </div>
 
       <GlobalSearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
+
+      {/* Quick Create */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="default" size="sm" className="gradient-brand text-primary-foreground shrink-0">
+            <Plus className="h-4 w-4 mr-1.5" />
+            Quick Create
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem onClick={() => navigate('/modules')} className="gap-2 cursor-pointer">
+            <UserPlus className="h-4 w-4" />
+            Create Lead
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => navigate('/modules')} className="gap-2 cursor-pointer">
+            <Handshake className="h-4 w-4" />
+            Create Deal
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => navigate('/tasks')} className="gap-2 cursor-pointer">
+            <CheckSquare className="h-4 w-4" />
+            Create Task
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => navigate('/email')} className="gap-2 cursor-pointer">
+            <Mail className="h-4 w-4" />
+            Send Email
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       {/* Notifications & User */}
       <div className="flex items-center gap-2 ml-auto">

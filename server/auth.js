@@ -2,11 +2,21 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { getPool, uuid } from './db.js';
 import crypto from 'crypto';
+import { seedTenantDefaults } from './tenantSeed.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || process.env.SUPABASE_JWT_SECRET || 'change-me-in-production';
 
 export function signToken(userId) {
   return jwt.sign({ sub: userId }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '7d' });
+}
+
+function slugFromName(name) {
+  return (name || '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .slice(0, 32) || 'workspace';
 }
 
 export async function authMiddleware(req, res, next) {
@@ -61,28 +71,61 @@ export function optionalAuth(req, res, next) {
   });
 }
 
-export async function registerUser(email, password, name) {
+/**
+ * Full signup: create tenant, admin user, profile, and seed default modules/fields/dashboard.
+ * @param {{ company_name: string, admin_name: string, email: string, password: string }}
+ */
+export async function registerUser({ company_name, admin_name, email, password }) {
   const pool = getPool();
   const [existing] = await pool.execute('SELECT id FROM users WHERE email = ?', [email]);
   if (existing.length) return { error: 'Email already registered' };
+
+  const subdomain = slugFromName(company_name);
+  const [existingSub] = await pool.execute('SELECT id FROM tenants WHERE subdomain = ?', [subdomain]);
+  if (existingSub.length) return { error: 'Subdomain already taken; try a different company name' };
+
+  const tenantId = 't_' + crypto.randomBytes(8).toString('hex');
+  const tenantName = (company_name || '').trim() || (admin_name || email.split('@')[0]) + "'s Workspace";
+  await pool.execute(
+    'INSERT INTO tenants (id, name, subdomain, plan, owner_id) VALUES (?, ?, ?, ?, ?)',
+    [tenantId, tenantName, subdomain, 'free', null]
+  );
+
   const userId = uuid();
   const password_hash = await bcrypt.hash(password, 10);
-  await pool.execute(
-    'INSERT INTO users (id, email, password_hash, name) VALUES (?, ?, ?, ?)',
-    [userId, email, password_hash, name || email.split('@')[0]]
-  );
-  const tenantId = 't_' + crypto.randomBytes(8).toString('hex');
-  await pool.execute('INSERT INTO tenants (id, name, owner_id) VALUES (?, ?, ?)', [
-    tenantId,
-    (name || email.split('@')[0]) + "'s Workspace",
-    userId,
-  ]);
+  const hasTenantRole = await hasUsersTenantRoleColumns(pool);
+  if (hasTenantRole) {
+    await pool.execute(
+      'INSERT INTO users (id, tenant_id, email, password_hash, name, role) VALUES (?, ?, ?, ?, ?, ?)',
+      [userId, tenantId, email, password_hash, (admin_name || '').trim() || email.split('@')[0], 'admin']
+    );
+  } else {
+    await pool.execute(
+      'INSERT INTO users (id, email, password_hash, name) VALUES (?, ?, ?, ?)',
+      [userId, email, password_hash, (admin_name || '').trim() || email.split('@')[0]]
+    );
+  }
+
+  await pool.execute('UPDATE tenants SET owner_id = ? WHERE id = ?', [userId, tenantId]);
+
   const profileId = uuid();
   await pool.execute(
     'INSERT INTO profiles (id, user_id, tenant_id, name, email, status) VALUES (?, ?, ?, ?, ?, ?)',
-    [profileId, userId, tenantId, name || email.split('@')[0], email, 'online']
+    [profileId, userId, tenantId, (admin_name || '').trim() || email.split('@')[0], email, 'online']
   );
+
+  await seedTenantDefaults(tenantId);
+
   return { userId, profileId, tenantId };
+}
+
+async function hasUsersTenantRoleColumns(pool) {
+  try {
+    const [rows] = await pool.execute("SHOW COLUMNS FROM users LIKE 'tenant_id'");
+    return rows.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 export async function verifyPassword(email, password) {

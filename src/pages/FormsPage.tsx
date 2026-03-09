@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { mockModules } from "@/lib/mock-data";
+import { useModules } from "@/hooks/useModulesCRUD";
 import { useWebForms } from "@/hooks/useWebForms";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
@@ -17,6 +17,7 @@ import { format } from "date-fns";
 export default function FormsPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { modules } = useModules();
   const { forms, createForm, deleteForm, toggleFormActive, getFormSubmissions } = useWebForms();
   const [createOpen, setCreateOpen] = useState(false);
   const [embedOpen, setEmbedOpen] = useState<string | null>(null);
@@ -59,7 +60,7 @@ export default function FormsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {forms.map((form, i) => {
-          const mod = mockModules.find((m) => m.id === form.moduleId);
+          const mod = modules.find((m) => m.id === form.moduleId);
           const subs = getFormSubmissions(form.id);
           return (
             <motion.div
@@ -153,7 +154,7 @@ export default function FormsPage() {
               <Select value={newModule} onValueChange={setNewModule}>
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Select module..." /></SelectTrigger>
                 <SelectContent>
-                  {mockModules.map((m) => (
+                  {modules.map((m) => (
                     <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                   ))}
                 </SelectContent>

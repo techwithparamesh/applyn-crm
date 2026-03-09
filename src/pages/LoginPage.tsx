@@ -31,7 +31,7 @@ export default function LoginPage() {
         toast({ title: 'Login failed', description: data.error || res.statusText, variant: 'destructive' });
         return;
       }
-      signIn(data.token, data.user);
+      signIn(data.token, data.user, data.tenant);
     } catch (err) {
       setLoading(false);
       toast({ title: 'Login failed', description: 'Network error', variant: 'destructive' });

@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Settings, Building2, Palette, Globe, CreditCard, Users, Check, Crown,
   Sparkles, Shield, Upload, Key, Plus, Copy, Trash2, Eye, EyeOff, UsersRound,
+  Boxes, ArrowRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -30,6 +32,7 @@ const PLAN_COLORS: Record<PlanTier, string> = {
 };
 
 export default function SettingsPage() {
+  const navigate = useNavigate();
   const { settings, subscription, updateSettings, changePlan } = useWorkspace();
   const { keys, loading: keysLoading, createKey, toggleKey, deleteKey } = useApiKeys();
   const { toast } = useToast();
@@ -71,9 +74,26 @@ export default function SettingsPage() {
           <TabsTrigger value="users" className="gap-1.5"><Users className="h-3.5 w-3.5" />Users</TabsTrigger>
           <TabsTrigger value="teams" className="gap-1.5"><UsersRound className="h-3.5 w-3.5" />Teams</TabsTrigger>
           <TabsTrigger value="roles" className="gap-1.5"><Shield className="h-3.5 w-3.5" />Roles</TabsTrigger>
+          <TabsTrigger value="permissions" className="gap-1.5"><Shield className="h-3.5 w-3.5" />Permissions</TabsTrigger>
+          <TabsTrigger value="modules" className="gap-1.5"><Boxes className="h-3.5 w-3.5" />Modules</TabsTrigger>
           <TabsTrigger value="api" className="gap-1.5"><Key className="h-3.5 w-3.5" />API</TabsTrigger>
           <TabsTrigger value="billing" className="gap-1.5"><CreditCard className="h-3.5 w-3.5" />Billing</TabsTrigger>
         </TabsList>
+
+        {/* MODULES - Module Builder */}
+        <TabsContent value="modules" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2"><Boxes className="h-4 w-4" /> CRM Module Builder</CardTitle>
+              <CardDescription>Create and manage dynamic CRM modules (e.g. Leads, Deals, Loan Applications, Patients). Define fields, forms, and pipelines per module.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={() => navigate('/settings/modules')} className="gradient-brand text-primary-foreground">
+                Open Module Builder <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* GENERAL */}
         <TabsContent value="general" className="space-y-6">
@@ -351,17 +371,51 @@ export default function SettingsPage() {
 
         {/* USERS */}
         <TabsContent value="users">
-          <UserManagement />
+          <Card>
+            <CardContent className="pt-4">
+              <div className="flex justify-end mb-4">
+                <Button variant="outline" size="sm" onClick={() => navigate('/settings/users')}>Open Users page <ArrowRight className="h-3.5 w-3.5 ml-1" /></Button>
+              </div>
+              <UserManagement />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* TEAMS */}
         <TabsContent value="teams">
-          <TeamManagement />
+          <Card>
+            <CardContent className="pt-4">
+              <div className="flex justify-end mb-4">
+                <Button variant="outline" size="sm" onClick={() => navigate('/settings/teams')}>Open Teams page <ArrowRight className="h-3.5 w-3.5 ml-1" /></Button>
+              </div>
+              <TeamManagement />
+            </CardContent>
+          </Card>
         </TabsContent>
 
-        {/* ROLES & PERMISSIONS */}
+        {/* ROLES */}
         <TabsContent value="roles">
-          <RoleManagement />
+          <Card>
+            <CardContent className="pt-4">
+              <div className="flex justify-end mb-4">
+                <Button variant="outline" size="sm" onClick={() => navigate('/settings/roles')}>Open Roles page <ArrowRight className="h-3.5 w-3.5 ml-1" /></Button>
+              </div>
+              <RoleManagement />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* PERMISSIONS */}
+        <TabsContent value="permissions">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Permission matrix</CardTitle>
+              <CardDescription>View which roles have which permissions. To edit, use the Roles tab or open the full Permissions page.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" onClick={() => navigate('/settings/permissions')}>Open Permissions page <ArrowRight className="h-3.5 w-3.5 ml-1" /></Button>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

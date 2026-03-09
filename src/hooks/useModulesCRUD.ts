@@ -14,6 +14,16 @@ export interface DbModule {
   created_at: string;
 }
 
+/** Field settings (placeholder, default_value, validation) stored in settings_json */
+export interface FieldSettings {
+  placeholder?: string;
+  default_value?: string;
+  min_length?: number;
+  max_length?: number;
+  regex?: string;
+  help_text?: string;
+}
+
 export interface DbField {
   id: string;
   module_id: string;
@@ -23,6 +33,7 @@ export interface DbField {
   field_type: string;
   is_required: boolean;
   options_json: string[] | null;
+  settings_json?: FieldSettings | null;
   order_index: number;
   created_at: string;
 }
@@ -95,7 +106,7 @@ export function useFields(moduleId: string) {
   }, [fetchFields]);
 
   const createField = useCallback(
-    async (input: { name: string; label: string; field_type: string; is_required?: boolean; options_json?: string[] }) => {
+    async (input: { name: string; label: string; field_type: string; is_required?: boolean; options_json?: string[]; settings_json?: FieldSettings | null }) => {
       const maxOrder = fields.length > 0 ? Math.max(...fields.map((f) => f.order_index)) + 1 : 0;
       const payload = {
         module_id: moduleId,
@@ -104,6 +115,7 @@ export function useFields(moduleId: string) {
         field_type: input.field_type,
         is_required: input.is_required || false,
         options_json: input.options_json || [],
+        settings_json: input.settings_json || null,
         order_index: maxOrder,
       };
       const { data, error } = await api.post('/api/module_fields', payload);
@@ -117,7 +129,7 @@ export function useFields(moduleId: string) {
     [moduleId, fields]
   );
 
-  const updateField = useCallback(async (id: string, updates: Partial<Pick<DbField, 'label' | 'name' | 'field_type' | 'is_required' | 'options_json' | 'order_index'>>) => {
+  const updateField = useCallback(async (id: string, updates: Partial<Pick<DbField, 'label' | 'name' | 'field_type' | 'is_required' | 'options_json' | 'settings_json' | 'order_index'>>) => {
     const { error } = await api.patch(`/api/module_fields/${id}`, updates);
     if (!error) setFields((prev) => prev.map((f) => (f.id === id ? { ...f, ...updates } : f)));
   }, []);
