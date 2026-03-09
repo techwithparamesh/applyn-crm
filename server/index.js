@@ -1,15 +1,102 @@
 import 'dotenv/config';
 import crypto from 'crypto';
+import path from 'path';
+import fs from 'fs';
 import express from 'express';
 import cors from 'cors';
+import multer from 'multer';
 import { getPool, uuid } from './db.js';
-import { authMiddleware, optionalAuth } from './auth.js';
+import bcrypt from 'bcryptjs';
+import { authMiddleware, optionalAuth, signToken, registerUser, verifyPassword } from './auth.js';
 
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 
 const pool = getPool();
+
+const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+['avatars', 'files'].forEach((d) => {
+  const p = path.join(UPLOAD_DIR, d);
+  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+});
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const sub = req.baseUrl.includes('avatar') ? 'avatars' : 'files';
+    cb(null, path.join(UPLOAD_DIR, sub));
+  },
+  filename: (req, file, cb) => {
+    const ext = (file.originalname && path.extname(file.originalname)) || '';
+    cb(null, `${uuid()}${ext}`);
+  },
+});
+const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
+
+app.use('/uploads', express.static(UPLOAD_DIR));
+
+// ---------- Auth (no /api prefix; no auth middleware) ----------
+app.post('/auth/signup', async (req, res) => {
+  const { email, password, name } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+  try {
+    const result = await registerUser(email, password, name);
+    if (result.error) return res.status(400).json({ error: result.error });
+    const token = signToken(result.userId);
+    const [prof] = await pool.execute(
+      'SELECT id, user_id, tenant_id, name, email, avatar_url, status, phone, timezone, notifications_enabled FROM profiles WHERE user_id = ?',
+      [result.userId]
+    );
+    res.status(201).json({ token, user: prof[0] });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+  const userId = await verifyPassword(email, password);
+  if (!userId) return res.status(401).json({ error: 'Invalid email or password' });
+  const token = signToken(userId);
+  const [prof] = await pool.execute(
+    'SELECT id, user_id, tenant_id, name, email, avatar_url, status, phone, timezone, notifications_enabled FROM profiles WHERE user_id = ?',
+    [userId]
+  );
+  res.json({ token, user: prof[0] });
+});
+
+app.get('/auth/me', authMiddleware, (req, res) => {
+  res.json(req.profile);
+});
+
+app.post('/auth/change-password', authMiddleware, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: 'currentPassword and newPassword required' });
+  const [rows] = await pool.execute('SELECT id, password_hash FROM users WHERE id = ?', [req.userId]);
+  if (!rows.length) return res.status(401).json({ error: 'User not found' });
+  const ok = await bcrypt.compare(currentPassword, rows[0].password_hash);
+  if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
+  const password_hash = await bcrypt.hash(newPassword, 10);
+  await pool.execute('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash, req.userId]);
+  res.json({ ok: true });
+});
+
+// ---------- File upload (auth required) ----------
+app.post('/api/upload/avatar', authMiddleware, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  const url = `/uploads/avatars/${req.file.filename}`;
+  const [prof] = await pool.execute('SELECT id FROM profiles WHERE user_id = ?', [req.userId]);
+  if (prof.length) await pool.execute('UPDATE profiles SET avatar_url = ? WHERE user_id = ?', [url, req.userId]);
+  res.json({ url });
+});
+
+app.post('/api/upload/file', authMiddleware, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  const url = `/uploads/files/${req.file.filename}`;
+  res.json({ url, filename: req.file.originalname });
+});
 
 function rowToCamel(row) {
   if (!row || typeof row !== 'object') return row;
@@ -202,6 +289,22 @@ app.post('/api/profiles', async (req, res) => {
   );
   const [r] = await pool.execute('SELECT * FROM profiles WHERE id = ?', [id]);
   res.status(201).json(r[0]);
+});
+
+app.patch('/api/profiles/me', async (req, res) => {
+  const [r] = await pool.execute('SELECT * FROM profiles WHERE user_id = ? LIMIT 1', [req.userId]);
+  if (!r.length) return res.status(404).json({ error: 'Not found' });
+  const allowed = ['name', 'email', 'avatar_url', 'status', 'phone', 'timezone', 'notifications_enabled'];
+  const updates = [];
+  const params = [];
+  for (const k of allowed) {
+    if (req.body[k] !== undefined) { updates.push(`${k} = ?`); params.push(req.body[k]); }
+  }
+  if (!updates.length) return res.json(r[0]);
+  params.push(req.userId);
+  await pool.execute(`UPDATE profiles SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`, params);
+  const [out] = await pool.execute('SELECT * FROM profiles WHERE user_id = ?', [req.userId]);
+  res.json(out[0]);
 });
 
 app.patch('/api/profiles/:id', async (req, res) => {
@@ -653,8 +756,34 @@ app.delete('/api/automation_actions/:id', async (req, res) => {
 });
 
 app.get('/api/automation_logs', async (req, res) => {
-  const [rows] = await pool.execute('SELECT * FROM automation_logs WHERE tenant_id = ? ORDER BY created_at DESC', [req.tenantId]);
+  const { automation_id } = req.query;
+  let sql = 'SELECT * FROM automation_logs WHERE tenant_id = ?';
+  const params = [req.tenantId];
+  if (automation_id) { sql += ' AND automation_id = ?'; params.push(automation_id); }
+  sql += ' ORDER BY created_at DESC LIMIT 50';
+  const [rows] = await pool.execute(sql, params);
   res.json(rows);
+});
+
+app.post('/api/run-automation', async (req, res) => {
+  const { module_id, trigger_event, record, tenant_id } = req.body;
+  const tid = tenant_id || req.tenantId;
+  const [autos] = await pool.execute('SELECT * FROM automations WHERE tenant_id = ? AND module_id = ? AND trigger_event = ? AND is_active = 1', [tid, module_id, trigger_event]);
+  let executed = 0;
+  for (const auto of autos) {
+    const [conds] = await pool.execute('SELECT * FROM automation_conditions WHERE automation_id = ? ORDER BY sort_order', [auto.id]);
+    let match = true;
+    for (const c of conds) {
+      const val = record?.values?.[c.field_name];
+      if (c.operator === 'equals' && val != c.value) match = false;
+      if (c.operator === 'not_equals' && val == c.value) match = false;
+    }
+    if (match) {
+      const [actions] = await pool.execute('SELECT * FROM automation_actions WHERE automation_id = ? ORDER BY sort_order', [auto.id]);
+      for (const a of actions) executed++;
+    }
+  }
+  res.json({ matched: autos.length, executed });
 });
 
 // ---------- Teams, team_members, invitations ----------
@@ -775,7 +904,11 @@ app.patch('/api/email_accounts/:id', async (req, res) => {
 });
 
 app.get('/api/emails', async (req, res) => {
-  const { account_id } = req.query;
+  const { account_id, id } = req.query;
+  if (id) {
+    const [rows] = await pool.execute('SELECT * FROM emails WHERE id = ? AND tenant_id = ?', [id, req.tenantId]);
+    return res.json(rows[0] || null);
+  }
   if (!account_id) return res.status(400).json({ error: 'account_id required' });
   const [rows] = await pool.execute('SELECT * FROM emails WHERE account_id = ? AND tenant_id = ? ORDER BY sent_at DESC', [account_id, req.tenantId]);
   res.json(rows);

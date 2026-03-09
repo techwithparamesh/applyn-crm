@@ -12,7 +12,7 @@ The API settings page lets you create and manage **API keys** for programmatic a
 
 - **API key list** — Name, last used (if tracked), created date; copy, reveal, revoke.
 - **Create key** — Name for the key; after creation the full key is shown once (copy it then).
-- **Base URL** — Shown for reference (e.g. `https://your-project.supabase.co/functions/v1/api-records`).
+- **Base URL** — Shown for reference (e.g. `http://localhost:3001` or your deployed API URL).
 
 ## User Actions
 

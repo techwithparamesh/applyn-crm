@@ -1,6 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { api, isUsingMySQL } from '@/lib/api';
+import { api } from '@/lib/api';
 import { ActivityLog } from '@/lib/types';
 import { AdvancedFilter, applyAdvancedFilter, createEmptyFilter } from '@/lib/filter-types';
 import { useAuth } from '@/components/AuthProvider';
@@ -75,18 +74,8 @@ export function useRecords({ moduleId, pageSize = 10 }: UseRecordsOptions) {
   const fetchRecords = useCallback(async () => {
     if (!moduleId) return;
     setLoading(true);
-    if (isUsingMySQL()) {
-      const { data, error } = await api.get('/api/crm_records', { module_id: moduleId });
-      if (!error && data) setRecords((data as any[]).map(mapRow));
-    } else {
-      const { data, error } = await supabase
-        .from('crm_records')
-        .select('*')
-        .eq('module_id', moduleId)
-        .is('deleted_at', null)
-        .order('updated_at', { ascending: false });
-      if (!error && data) setRecords(data.map(mapRow));
-    }
+    const { data, error } = await api.get('/api/crm_records', { module_id: moduleId });
+    if (!error && data) setRecords((data as any[]).map(mapRow));
     setLoading(false);
   }, [moduleId]);
 
@@ -138,22 +127,8 @@ export function useRecords({ moduleId, pageSize = 10 }: UseRecordsOptions) {
 
   const createRecord = useCallback(async (values: Record<string, any>): Promise<CrmRecord> => {
     const userName = profile?.name || 'User';
-    let data: any = null;
-    if (isUsingMySQL()) {
-      const res = await api.post('/api/crm_records', { module_id: moduleId, created_by: userName, values });
-      data = res.data;
-    } else {
-      const r = await supabase
-        .from('crm_records')
-        .insert({
-          module_id: moduleId,
-          created_by: userName,
-          values: values as any,
-        })
-        .select()
-        .single();
-      data = r.data;
-    }
+    const res = await api.post('/api/crm_records', { module_id: moduleId, created_by: userName, values });
+    const data = res.data;
 
     const rec = data ? mapRow(data) : {
       id: `r-${Date.now()}`,
@@ -182,14 +157,7 @@ export function useRecords({ moduleId, pageSize = 10 }: UseRecordsOptions) {
       )
     );
     const merged = { ...oldValues, ...values };
-    if (isUsingMySQL()) {
-      await api.patch(`/api/crm_records/${recordId}`, { values: merged });
-    } else {
-      await supabase
-        .from('crm_records')
-        .update({ values: merged as any, updated_at: new Date().toISOString() })
-        .eq('id', recordId);
-    }
+    await api.patch(`/api/crm_records/${recordId}`, { values: merged });
 
     // Detect stage change
     const stageKey = values.stage !== undefined ? 'stage' : values.status !== undefined ? 'status' : null;
@@ -202,14 +170,7 @@ export function useRecords({ moduleId, pageSize = 10 }: UseRecordsOptions) {
 
   const deleteRecord = useCallback(async (recordId: string) => {
     setRecords((prev) => prev.filter((r) => r.id !== recordId));
-    if (isUsingMySQL()) {
-      await api.patch(`/api/crm_records/${recordId}`, { deleted_at: new Date().toISOString() });
-    } else {
-      await supabase
-        .from('crm_records')
-        .update({ deleted_at: new Date().toISOString() } as any)
-        .eq('id', recordId);
-    }
+    await api.patch(`/api/crm_records/${recordId}`, { deleted_at: new Date().toISOString() });
   }, []);
 
   const getRecord = useCallback((recordId: string) => {

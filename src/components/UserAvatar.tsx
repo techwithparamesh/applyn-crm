@@ -1,5 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
+import { getAssetUrl } from '@/lib/api';
 
 interface UserAvatarProps {
   name: string;
@@ -43,7 +44,7 @@ export function UserAvatar({ name, avatarUrl, status, size = 'md', className }: 
     <div className={cn('relative inline-flex', className)}>
       <Avatar className={cn(sizeClasses[size], 'border border-border')}>
         {avatarUrl ? (
-          <AvatarImage src={avatarUrl} alt={name} className="object-cover" />
+          <AvatarImage src={getAssetUrl(avatarUrl) || avatarUrl} alt={name} className="object-cover" />
         ) : null}
         <AvatarFallback className={cn('gradient-brand text-primary-foreground font-semibold', textSizeClasses[size])}>
           {initials}

@@ -1,6 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { api, isUsingMySQL } from '@/lib/api';
+import { api } from '@/lib/api';
 import { mockModules, mockRecords, mockFields } from '@/lib/mock-data';
 import { parseSearchQuery, matchesFilters, SearchFilter } from '@/lib/search-engine';
 
@@ -83,23 +82,13 @@ export function useGlobalSearch(query: string) {
 
     try {
       let data: any[] | null = null;
-      if (isUsingMySQL()) {
-        const res = await api.get('/api/search_records', {
-          _tenant_id: 't1',
-          _text_query: textQuery || query,
-          _limit_val: 50,
-          _offset_val: 0,
-        });
-        data = res.data as any[];
-      } else {
-        const r = await supabase.rpc('search_records', {
-          _tenant_id: 't1',
-          _text_query: textQuery || query,
-          _limit_val: 50,
-          _offset_val: 0,
-        });
-        data = r.data;
-      }
+      const res = await api.get('/api/search_records', {
+        _tenant_id: 't1',
+        _text_query: textQuery || query,
+        _limit_val: 50,
+        _offset_val: 0,
+      });
+      data = res.data as any[];
 
       if (data) {
         const results: SearchResult[] = (data as any[])
@@ -177,9 +166,6 @@ export function useRecentSearches() {
     setSearches(prev => {
       const next = [query, ...prev.filter(s => s !== query)].slice(0, 10);
       localStorage.setItem('crm_recent_searches', JSON.stringify(next));
-
-      // Also save to DB
-      (supabase as any).from('recent_searches').insert({ query }).then(() => {});
 
       return next;
     });

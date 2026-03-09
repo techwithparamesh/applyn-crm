@@ -2,17 +2,17 @@
 
 ## Overview
 
-The Applyn CRM API lets you read and write records programmatically using REST endpoints. Authenticate with an **API key** from Settings → API. The main records endpoint is provided as a Supabase Edge Function; use it to create, list, update, and delete records in your workspace.
+The Applyn CRM API lets you read and write records programmatically using REST endpoints. Authenticate with an **API key** from Settings → API or with a **JWT** from login/signup. Use the Node/MySQL backend to create, list, update, and delete records.
 
 ## Base URL
 
-Use your project’s Supabase functions URL, for example:
+Use your API server URL, for example:
 
 ```
-https://<your-project-ref>.supabase.co/functions/v1/api-records
+http://localhost:3001/api
 ```
 
-Replace `<your-project-ref>` with your actual Supabase project reference. You can find the exact URL in **Settings → API** in the CRM.
+Set **VITE_API_URL** (e.g. `http://localhost:3001`) in the frontend. The records endpoint is `GET/POST/PATCH/DELETE /api/crm_records`.
 
 ## Authentication
 

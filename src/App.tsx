@@ -1,12 +1,9 @@
-import { useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/components/AuthProvider";
-import { setApiTokenGetter } from "@/lib/api";
-import { supabase } from "@/integrations/supabase/client";
 import { AppLayout } from "@/components/AppLayout";
 import { PermissionProvider } from "@/components/PermissionProvider";
 import Dashboard from "@/pages/Dashboard";
@@ -37,16 +34,6 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-function ApiTokenSetter() {
-  useEffect(() => {
-    setApiTokenGetter(async () => {
-      const { data } = await supabase.auth.getSession();
-      return data.session?.access_token ?? null;
-    });
-  }, []);
-  return null;
-}
-
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -54,7 +41,6 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <ApiTokenSetter />
           <PermissionProvider>
             <Routes>
               {/* Public routes */}

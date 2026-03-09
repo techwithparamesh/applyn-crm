@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/lib/api';
 
 export interface Tag {
   id: string;
@@ -27,26 +27,26 @@ export function getTagColorClasses(colorKey: string) {
   return TAG_COLORS.find((c) => c.key === colorKey) || TAG_COLORS[0];
 }
 
-// DB-backed tag system using record_tags table
 export function useTags() {
   const [tagRows, setTagRows] = useState<{ id: string; record_id: string; tag: string; color: string }[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   const fetchTags = useCallback(async () => {
-    const { data } = await supabase.from('record_tags').select('*');
-    if (data) setTagRows(data as any[]);
+    const { data } = await api.get('/api/record_tags');
+    if (data) setTagRows((data as any[]) || []);
     setLoaded(true);
   }, []);
 
-  useEffect(() => { fetchTags(); }, [fetchTags]);
+  useEffect(() => {
+    fetchTags();
+  }, [fetchTags]);
 
-  // Derive unique tags from all rows
   const tags: Tag[] = [];
   const seen = new Set<string>();
   for (const row of tagRows) {
     if (!seen.has(row.tag)) {
       seen.add(row.tag);
-      tags.push({ id: row.tag, tenantId: 't1', name: row.tag, color: row.color });
+      tags.push({ id: row.tag, tenantId: 't1', name: row.tag, color: row.color || 'blue' });
     }
   }
 
@@ -55,34 +55,34 @@ export function useTags() {
   }, []);
 
   const deleteTag = useCallback(async (tagId: string) => {
-    await supabase.from('record_tags').delete().eq('tag', tagId);
-    setTagRows(prev => prev.filter(r => r.tag !== tagId));
+    await api.delete('/api/record_tags', { tag: tagId });
+    setTagRows((prev) => prev.filter((r) => r.tag !== tagId));
   }, []);
 
-  const assignTag = useCallback(async (recordId: string, tagId: string) => {
-    if (tagRows.some(r => r.record_id === recordId && r.tag === tagId)) return;
-    const tag = tags.find(t => t.id === tagId);
-    const color = tag?.color || 'blue';
-    const { data } = await supabase
-      .from('record_tags')
-      .insert({ record_id: recordId, tag: tagId, color } as any)
-      .select()
-      .maybeSingle();
-    if (data) {
-      setTagRows(prev => [...prev, data as any]);
-    }
-  }, [tagRows, tags]);
+  const assignTag = useCallback(
+    async (recordId: string, tagId: string) => {
+      if (tagRows.some((r) => r.record_id === recordId && r.tag === tagId)) return;
+      const tag = tags.find((t) => t.id === tagId);
+      const color = tag?.color || 'blue';
+      const { data } = await api.post('/api/record_tags', { record_id: recordId, tag: tagId, color });
+      if (data) setTagRows((prev) => [...prev, data as any]);
+    },
+    [tagRows, tags]
+  );
 
   const removeTag = useCallback(async (recordId: string, tagId: string) => {
-    await supabase.from('record_tags').delete().eq('record_id', recordId).eq('tag', tagId);
-    setTagRows(prev => prev.filter(r => !(r.record_id === recordId && r.tag === tagId)));
+    await api.delete('/api/record_tags', { record_id: recordId, tag: tagId });
+    setTagRows((prev) => prev.filter((r) => !(r.record_id === recordId && r.tag === tagId)));
   }, []);
 
-  const getRecordTags = useCallback((recordId: string): Tag[] => {
-    return tagRows
-      .filter(r => r.record_id === recordId)
-      .map(r => ({ id: r.tag, tenantId: 't1', name: r.tag, color: r.color }));
-  }, [tagRows]);
+  const getRecordTags = useCallback(
+    (recordId: string): Tag[] => {
+      return tagRows
+        .filter((r) => r.record_id === recordId)
+        .map((r) => ({ id: r.tag, tenantId: 't1', name: r.tag, color: r.color }));
+    },
+    [tagRows]
+  );
 
-  return { tags, recordTags: tagRows, createTag, deleteTag, assignTag, removeTag, getRecordTags };
+  return { tags, recordTags: tagRows, createTag, deleteTag, assignTag, removeTag, getRecordTags, loaded };
 }

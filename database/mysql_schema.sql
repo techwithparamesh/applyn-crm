@@ -6,7 +6,21 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- ---------------------------------------------------------------------------
--- Tenants (no FK to auth; owner_id is app-managed user identifier)
+-- Users (local auth; password_hash from bcrypt)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS users (
+  id CHAR(36) PRIMARY KEY,
+  email VARCHAR(255) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  name VARCHAR(255) NOT NULL DEFAULT '',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_users_email (email),
+  INDEX idx_users_email (email)
+);
+
+-- ---------------------------------------------------------------------------
+-- Tenants (owner_id references users.id)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS tenants (
   id VARCHAR(64) PRIMARY KEY,
@@ -16,7 +30,7 @@ CREATE TABLE IF NOT EXISTS tenants (
 );
 
 -- ---------------------------------------------------------------------------
--- Profiles (user_id links to your auth system)
+-- Profiles (user_id references users.id)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS profiles (
   id CHAR(36) PRIMARY KEY,

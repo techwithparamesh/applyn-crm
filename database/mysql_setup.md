@@ -1,6 +1,6 @@
 # MySQL Setup & Migration Guide
 
-This guide explains how to run the CRM against **MySQL 8+** instead of PostgreSQL/Supabase. The schema and application patterns are adapted for MySQL compatibility.
+This guide explains how to run the CRM against **MySQL 8+**. The app uses MySQL for **auth, data, and file storage** (no Supabase required). The schema includes a `users` table for local signup/login; the Node server issues JWTs and serves uploads.
 
 ---
 
@@ -258,7 +258,7 @@ Use parameterized queries when building JSON paths or search strings (e.g. pass 
 
 ## 11. Backend API when using MySQL
 
-The current frontend uses **Supabase client** (`@supabase/supabase-js`) for all data access. To run on MySQL you need a **backend API** (e.g. Node/Express, Next.js API routes, or serverless) that:
+The frontend uses the **Node/MySQL API** for all data access. The backend (e.g. Node/Express in this repo) must:
 
 1. Connects to MySQL with the credentials above.
 2. Authenticates users (your auth provider) and resolves `tenant_id` (e.g. from `profiles`).

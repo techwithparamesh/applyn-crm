@@ -17,7 +17,6 @@ import { useAuth } from '@/components/AuthProvider';
 
 export default function ProfilePage() {
   const { profile, loading, saving, updateProfile, uploadAvatar, changePassword } = useProfile();
-  const { user } = useAuth();
 
   // Local form state
   const [name, setName] = useState('');
@@ -26,6 +25,7 @@ export default function ProfilePage() {
   const [notifications, setNotifications] = useState(true);
 
   // Password state
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
@@ -59,6 +59,10 @@ export default function ProfilePage() {
   };
 
   const handleChangePassword = async () => {
+    if (!currentPassword) {
+      toast.error('Enter your current password');
+      return;
+    }
     if (newPassword.length < 6) {
       toast.error('Password must be at least 6 characters');
       return;
@@ -68,10 +72,11 @@ export default function ProfilePage() {
       return;
     }
     setChangingPassword(true);
-    const success = await changePassword(newPassword);
+    const success = await changePassword(currentPassword, newPassword);
     setChangingPassword(false);
     if (success) {
       toast.success('Password updated successfully');
+      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } else {
@@ -190,7 +195,7 @@ export default function ProfilePage() {
               </div>
               <div className="space-y-2">
                 <Label>User ID</Label>
-                <Input value={user?.id || ''} disabled className="bg-muted/50 font-mono text-xs" />
+                <Input value={profile?.user_id || profile?.id || ''} disabled className="bg-muted/50 font-mono text-xs" />
               </div>
               <div className="space-y-2">
                 <Label>Member Since</Label>
@@ -209,6 +214,16 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="max-w-md space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="currentPassword">Current Password</Label>
+                  <Input
+                    id="currentPassword"
+                    type="password"
+                    value={currentPassword}
+                    onChange={e => setCurrentPassword(e.target.value)}
+                    placeholder="••••••••"
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="newPassword">New Password</Label>
                   <Input
@@ -231,7 +246,7 @@ export default function ProfilePage() {
                 </div>
                 <Button
                   onClick={handleChangePassword}
-                  disabled={changingPassword || !newPassword || !confirmPassword}
+                  disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword}
                   className="gradient-brand text-primary-foreground"
                 >
                   {changingPassword && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}

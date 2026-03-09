@@ -26,9 +26,9 @@ This Express server exposes a REST API that uses **MySQL** instead of Supabase f
 
    # JWT secret (from Supabase Dashboard → Settings → API → JWT Secret)
    # Used to verify the Supabase access token sent by the frontend
-   SUPABASE_JWT_SECRET=your-supabase-jwt-secret
+   JWT_SECRET=your-jwt-secret
    # Or use a generic name:
-   # JWT_SECRET=your-supabase-jwt-secret
+   # JWT_SECRET=your-jwt-secret
 
    # Optional: server port (default 3001)
    PORT=3001
@@ -55,7 +55,7 @@ Login and signup still use **Supabase Auth**. The app sends the Supabase access 
 
 ## API routes
 
-All routes under `/api` require `Authorization: Bearer <supabase_access_token>`.
+All routes under `/api` require `Authorization: Bearer <token>` (JWT from POST /auth/login or /auth/signup).
 
 - `GET/POST/PATCH/DELETE /api/crm_records` – records (list, create, update, soft delete)
 - `GET /api/search_records` – search (replaces Supabase `search_records` RPC)

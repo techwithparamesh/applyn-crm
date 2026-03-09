@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { UserPlus, Loader2, CheckCircle } from 'lucide-react';
+import { UserPlus, Loader2 } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
+import { getApiBase } from '@/lib/api';
 
 export default function SignupPage() {
   const [name, setName] = useState('');
@@ -14,8 +15,8 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
   const { toast } = useToast();
+  const { signIn } = useAuth();
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,21 +29,24 @@ export default function SignupPage() {
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { name },
-      },
-    });
-    setLoading(false);
-    if (error) {
-      toast({ title: 'Signup failed', description: error.message, variant: 'destructive' });
-    } else {
-      setSuccess(true);
+    try {
+      const res = await fetch(`${getApiBase()}/auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name: name || undefined }),
+      });
+      const data = await res.json();
+      setLoading(false);
+      if (!res.ok) {
+        toast({ title: 'Signup failed', description: data.error || res.statusText, variant: 'destructive' });
+        return;
+      }
+      signIn(data.token, data.user);
+    } catch (err) {
+      setLoading(false);
+      toast({ title: 'Signup failed', description: 'Network error', variant: 'destructive' });
     }
   };
-
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -58,7 +62,7 @@ export default function SignupPage() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Full Name</Label>
-              <Input id="name" placeholder="John Doe" value={name} onChange={e => setName(e.target.value)} required />
+              <Input id="name" placeholder="John Doe" value={name} onChange={e => setName(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>

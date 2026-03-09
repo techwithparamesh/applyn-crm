@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/lib/api';
 
 export interface Profile {
   id: string;
@@ -34,7 +34,19 @@ export interface Invitation {
   created_at: string;
 }
 
-// ─── Profiles ───
+function mapProfile(row: any): Profile {
+  return {
+    id: row.id ?? row.profile_id,
+    tenant_id: row.tenant_id ?? '',
+    user_id: row.user_id ?? null,
+    email: row.email ?? row.profile_email ?? '',
+    name: row.name ?? row.profile_name ?? '',
+    avatar_url: row.avatar_url ?? null,
+    status: row.status ?? 'active',
+    created_at: row.created_at ?? '',
+    updated_at: row.updated_at ?? '',
+  };
+}
 
 export function useProfiles() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -42,41 +54,27 @@ export function useProfiles() {
 
   const fetchProfiles = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from('profiles').select('*').order('name');
+    const { data } = await api.get('/api/profiles');
     setProfiles((data as any[] || []).map(mapProfile));
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchProfiles(); }, [fetchProfiles]);
+  useEffect(() => {
+    fetchProfiles();
+  }, [fetchProfiles]);
 
   const updateProfile = useCallback(async (id: string, updates: Partial<Pick<Profile, 'name' | 'avatar_url' | 'status'>>) => {
-    await supabase.from('profiles').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id);
-    setProfiles(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+    await api.patch(`/api/profiles/${id}`, updates);
+    setProfiles((prev) => prev.map((p) => (p.id === id ? { ...p, ...updates } : p)));
   }, []);
 
   const deleteProfile = useCallback(async (id: string) => {
-    await supabase.from('profiles').delete().eq('id', id);
-    setProfiles(prev => prev.filter(p => p.id !== id));
+    await api.delete(`/api/profiles/${id}`);
+    setProfiles((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
   return { profiles, loading, fetchProfiles, updateProfile, deleteProfile };
 }
-
-function mapProfile(row: any): Profile {
-  return {
-    id: row.id,
-    tenant_id: row.tenant_id,
-    user_id: row.user_id,
-    email: row.email,
-    name: row.name,
-    avatar_url: row.avatar_url,
-    status: row.status,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  };
-}
-
-// ─── Teams ───
 
 export function useTeams() {
   const [teams, setTeams] = useState<Team[]>([]);
@@ -84,67 +82,75 @@ export function useTeams() {
 
   const fetchTeams = useCallback(async () => {
     setLoading(true);
-    const { data: teamRows } = await supabase.from('teams').select('*').order('name');
-    if (!teamRows) { setLoading(false); return; }
-
-    const teamIds = teamRows.map((t: any) => t.id);
-    const { data: memberRows } = await supabase
-      .from('team_members')
-      .select('*, profiles(*)')
-      .in('team_id', teamIds.length ? teamIds : ['__none__']);
-
-    const mapped: Team[] = teamRows.map((t: any) => ({
-      id: t.id,
-      tenant_id: t.tenant_id,
-      name: t.name,
-      description: t.description || '',
-      created_at: t.created_at,
-      members: (memberRows || [])
-        .filter((m: any) => m.team_id === t.id && m.profiles)
-        .map((m: any) => mapProfile(m.profiles)),
-    }));
-
+    const { data: teamRows } = await api.get('/api/teams');
+    const list = (teamRows || []) as any[];
+    if (!list.length) {
+      setTeams([]);
+      setLoading(false);
+      return;
+    }
+    const mapped: Team[] = [];
+    for (const t of list) {
+      const { data: memberRows } = await api.get('/api/team_members', { team_id: t.id });
+      const members = ((memberRows || []) as any[]).map((m) => mapProfile({ profile_id: m.profile_id, profile_name: m.profile_name, profile_email: m.profile_email, ...m }));
+      mapped.push({
+        id: t.id,
+        tenant_id: t.tenant_id,
+        name: t.name,
+        description: t.description || '',
+        created_at: t.created_at,
+        members,
+      });
+    }
     setTeams(mapped);
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchTeams(); }, [fetchTeams]);
+  useEffect(() => {
+    fetchTeams();
+  }, [fetchTeams]);
 
   const createTeam = useCallback(async (name: string, description?: string) => {
-    const { data, error } = await supabase
-      .from('teams')
-      .insert({ name, description: description || '' })
-      .select()
-      .single();
+    const { data, error } = await api.post('/api/teams', { name, description: description || '' });
     if (data) {
-      const team: Team = { id: data.id, tenant_id: data.tenant_id, name: data.name, description: data.description || '', created_at: data.created_at, members: [] };
-      setTeams(prev => [...prev, team]);
+      const team: Team = {
+        id: (data as any).id,
+        tenant_id: (data as any).tenant_id,
+        name: (data as any).name,
+        description: (data as any).description || '',
+        created_at: (data as any).created_at,
+        members: [],
+      };
+      setTeams((prev) => [...prev, team]);
       return team;
     }
     return null;
   }, []);
 
   const deleteTeam = useCallback(async (id: string) => {
-    await supabase.from('teams').delete().eq('id', id);
-    setTeams(prev => prev.filter(t => t.id !== id));
+    await api.delete(`/api/teams/${id}`);
+    setTeams((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const addMember = useCallback(async (teamId: string, profileId: string) => {
-    const { error } = await supabase.from('team_members').insert({ team_id: teamId, profile_id: profileId });
-    if (!error) await fetchTeams();
-  }, [fetchTeams]);
+  const addMember = useCallback(
+    async (teamId: string, profileId: string) => {
+      await api.post('/api/team_members', { team_id: teamId, profile_id: profileId });
+      await fetchTeams();
+    },
+    [fetchTeams]
+  );
 
   const removeMember = useCallback(async (teamId: string, profileId: string) => {
-    await supabase.from('team_members').delete().eq('team_id', teamId).eq('profile_id', profileId);
-    setTeams(prev => prev.map(t =>
-      t.id === teamId ? { ...t, members: (t.members || []).filter(m => m.id !== profileId) } : t
-    ));
+    await api.delete('/api/team_members', { team_id: teamId, profile_id: profileId });
+    setTeams((prev) =>
+      prev.map((t) =>
+        t.id === teamId ? { ...t, members: (t.members || []).filter((m) => m.id !== profileId) } : t
+      )
+    );
   }, []);
 
   return { teams, loading, fetchTeams, createTeam, deleteTeam, addMember, removeMember };
 }
-
-// ─── Invitations ───
 
 export function useInvitations() {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -152,43 +158,53 @@ export function useInvitations() {
 
   const fetchInvitations = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from('invitations').select('*').order('created_at', { ascending: false });
-    setInvitations((data as any[] || []).map((row: any) => ({
-      id: row.id,
-      tenant_id: row.tenant_id,
-      email: row.email,
-      role_id: row.role_id,
-      token: row.token,
-      expires_at: row.expires_at,
-      accepted: row.accepted,
-      invited_by: row.invited_by,
-      created_at: row.created_at,
-    })));
+    const { data } = await api.get('/api/invitations');
+    setInvitations(
+      (data as any[] || []).map((row: any) => ({
+        id: row.id,
+        tenant_id: row.tenant_id,
+        email: row.email,
+        role_id: row.role_id,
+        token: row.token,
+        expires_at: row.expires_at,
+        accepted: row.accepted,
+        invited_by: row.invited_by,
+        created_at: row.created_at,
+      }))
+    );
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchInvitations(); }, [fetchInvitations]);
+  useEffect(() => {
+    fetchInvitations();
+  }, [fetchInvitations]);
 
   const createInvitation = useCallback(async (email: string, roleId?: string) => {
-    const { data, error } = await supabase
-      .from('invitations')
-      .insert({ email, role_id: roleId || null })
-      .select()
-      .single();
+    const { data, error } = await api.post('/api/invitations', { email, role_id: roleId || null });
     if (data) {
-      setInvitations(prev => [{
-        id: data.id, tenant_id: data.tenant_id, email: data.email,
-        role_id: data.role_id, token: data.token, expires_at: data.expires_at,
-        accepted: data.accepted, invited_by: data.invited_by, created_at: data.created_at,
-      }, ...prev]);
+      const d = data as any;
+      setInvitations((prev) => [
+        {
+          id: d.id,
+          tenant_id: d.tenant_id,
+          email: d.email,
+          role_id: d.role_id,
+          token: d.token,
+          expires_at: d.expires_at,
+          accepted: d.accepted,
+          invited_by: d.invited_by,
+          created_at: d.created_at,
+        },
+        ...prev,
+      ]);
       return data;
     }
     return null;
   }, []);
 
   const deleteInvitation = useCallback(async (id: string) => {
-    await supabase.from('invitations').delete().eq('id', id);
-    setInvitations(prev => prev.filter(i => i.id !== id));
+    await api.delete(`/api/invitations/${id}`);
+    setInvitations((prev) => prev.filter((i) => i.id !== id));
   }, []);
 
   return { invitations, loading, fetchInvitations, createInvitation, deleteInvitation };

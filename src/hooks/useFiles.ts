@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api, getApiBase, getToken, getAssetUrl } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 
 export interface CrmFile {
@@ -18,7 +18,7 @@ function mapRow(row: any): CrmFile {
     recordId: row.record_id,
     fileName: row.file_name,
     fileUrl: row.file_url,
-    fileSize: row.file_size,
+    fileSize: row.file_size ?? 0,
     uploadedBy: row.uploaded_by,
     createdAt: row.created_at,
   };
@@ -35,56 +35,49 @@ export function useFiles(recordId: string) {
   const fetchFiles = useCallback(async () => {
     if (!recordId) return;
     setLoading(true);
-    const { data } = await supabase
-      .from('files')
-      .select('*')
-      .eq('record_id', recordId)
-      .order('created_at', { ascending: false });
-    if (data) setFiles(data.map(mapRow));
+    const { data } = await api.get('/api/files', { record_id: recordId });
+    if (data) setFiles((data as any[]).map(mapRow));
     setLoading(false);
   }, [recordId]);
 
-  useEffect(() => { fetchFiles(); }, [fetchFiles]);
+  useEffect(() => {
+    fetchFiles();
+  }, [fetchFiles]);
 
-  const uploadFile = useCallback(async (file: File) => {
-    setUploading(true);
-    const filePath = `${tenantId}/${recordId}/${Date.now()}_${file.name}`;
-    
-    const { error: uploadError } = await supabase.storage
-      .from('crm-files')
-      .upload(filePath, file);
-    
-    if (uploadError) {
-      setUploading(false);
-      throw uploadError;
-    }
-
-    const { data: urlData } = supabase.storage.from('crm-files').getPublicUrl(filePath);
-    const fileUrl = urlData.publicUrl;
-
-    const { data } = await supabase.from('files').insert({
-      record_id: recordId,
-      file_name: file.name,
-      file_url: fileUrl,
-      file_size: file.size,
-      uploaded_by: userName,
-      tenant_id: tenantId,
-    } as any).select().single();
-
-    if (data) setFiles(prev => [mapRow(data), ...prev]);
-    setUploading(false);
-  }, [recordId, userName, tenantId]);
+  const uploadFile = useCallback(
+    async (file: File) => {
+      setUploading(true);
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        const token = getToken();
+        const res = await fetch(`${getApiBase()}/api/upload/file`, {
+          method: 'POST',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: form,
+        });
+        const uploadData = await res.json();
+        if (!res.ok || !uploadData?.url) throw new Error(uploadData?.error || 'Upload failed');
+        const fileUrl = uploadData.url;
+        const { data } = await api.post('/api/files', {
+          record_id: recordId,
+          file_name: file.name,
+          file_url: fileUrl,
+          file_size: file.size,
+          uploaded_by: userName,
+        });
+        if (data) setFiles((prev) => [mapRow(data), ...prev]);
+      } finally {
+        setUploading(false);
+      }
+    },
+    [recordId, userName]
+  );
 
   const deleteFile = useCallback(async (fileId: string) => {
-    const file = files.find(f => f.id === fileId);
-    setFiles(prev => prev.filter(f => f.id !== fileId));
-    await supabase.from('files').delete().eq('id', fileId);
-    // Try to remove from storage too
-    if (file?.fileUrl) {
-      const path = file.fileUrl.split('/crm-files/')[1];
-      if (path) await supabase.storage.from('crm-files').remove([path]);
-    }
-  }, [files]);
+    setFiles((prev) => prev.filter((f) => f.id !== fileId));
+    await api.delete(`/api/files/${fileId}`);
+  }, []);
 
-  return { files, loading, uploading, uploadFile, deleteFile };
+  return { files, loading, uploading, uploadFile, deleteFile, getAssetUrl };
 }

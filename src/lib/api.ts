@@ -1,31 +1,43 @@
 /**
- * MySQL API client. Replaces Supabase client for data when using the Node/MySQL backend.
- * Set VITE_USE_MYSQL_API=true and VITE_API_URL=http://localhost:3001 to use MySQL.
- * Auth remains Supabase; token from supabase.auth.getSession() is sent to the API.
+ * MySQL API client. All data and auth go through the Node/MySQL backend.
+ * Set VITE_API_URL (e.g. http://localhost:3001). Token is read from localStorage (crm_token).
  */
 
-const USE_MYSQL = import.meta.env.VITE_USE_MYSQL_API === 'true' || import.meta.env.VITE_USE_MYSQL_API === '1';
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:3001').replace(/\/$/, '');
 
-let getToken: (() => Promise<string | null>) | null = null;
+const TOKEN_KEY = 'crm_token';
 
-export function setApiTokenGetter(fn: () => Promise<string | null>) {
-  getToken = fn;
+export function getApiBase() {
+  return API_BASE;
+}
+
+/** Resolve asset URL (e.g. avatar, uploaded file) to full API origin path. */
+export function getAssetUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (path.startsWith('http')) return path;
+  const base = API_BASE.replace(/\/$/, '');
+  return path.startsWith('/') ? base + path : base + '/' + path;
+}
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setToken(token: string | null) {
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
 }
 
 export function isUsingMySQL(): boolean {
-  return USE_MYSQL;
+  return true;
 }
 
 async function request<T = unknown>(
   path: string,
   options: RequestInit & { params?: Record<string, string | number | undefined> } = {}
 ): Promise<{ data: T | null; error: { message: string } | null }> {
-  if (!USE_MYSQL) {
-    return { data: null, error: { message: 'MySQL API not enabled' } };
-  }
-  const { params, ...init } = options;
   let url = `${API_BASE}${path.startsWith('/') ? path : '/' + path}`;
+  const { params, ...init } = options;
   if (params && Object.keys(params).length > 0) {
     const search = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) {
@@ -34,7 +46,7 @@ async function request<T = unknown>(
     const q = search.toString();
     if (q) url += (url.includes('?') ? '&' : '?') + q;
   }
-  const token = getToken ? await getToken() : null;
+  const token = getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(init.headers as Record<string, string>),

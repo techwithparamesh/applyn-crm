@@ -1,26 +1,40 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { LogIn, Loader2 } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
+import { getApiBase } from '@/lib/api';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  const { signIn } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) {
-      toast({ title: 'Login failed', description: error.message, variant: 'destructive' });
+    try {
+      const res = await fetch(`${getApiBase()}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      setLoading(false);
+      if (!res.ok) {
+        toast({ title: 'Login failed', description: data.error || res.statusText, variant: 'destructive' });
+        return;
+      }
+      signIn(data.token, data.user);
+    } catch (err) {
+      setLoading(false);
+      toast({ title: 'Login failed', description: 'Network error', variant: 'destructive' });
     }
   };
 

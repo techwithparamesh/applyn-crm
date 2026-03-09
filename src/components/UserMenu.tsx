@@ -25,23 +25,27 @@ import {
   Building2,
 } from 'lucide-react';
 import { useEffect } from 'react';
+import { getApiBase, getToken } from '@/lib/api';
 
 export function UserMenu() {
   const navigate = useNavigate();
   const { signOut } = useAuth();
   const { profile, updateStatus } = useProfile();
 
-  // Set online status on mount, offline on unmount
   useEffect(() => {
     if (profile) {
       updateStatus('online');
 
       const handleBeforeUnload = () => {
-        // Use sendBeacon or sync update for offline
-        navigator.sendBeacon?.(
-          `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/profiles?id=eq.${profile.id}`,
-          JSON.stringify({ status: 'offline' })
-        );
+        const token = getToken();
+        if (token) {
+          fetch(`${getApiBase()}/api/profiles/me`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status: 'offline' }),
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            keepalive: true,
+          }).catch(() => {});
+        }
       };
 
       window.addEventListener('beforeunload', handleBeforeUnload);

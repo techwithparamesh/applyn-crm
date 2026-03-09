@@ -30,7 +30,7 @@ const TYPE_COLORS: Record<NotificationType, string> = {
 
 export function AppHeader() {
   const { notifications, unreadCount, markAsRead, markAllAsRead, dismiss } = useNotifications();
-  const { user, profile, signOut } = useAuth();
+  const { profile, signOut } = useAuth();
   const navigate = useNavigate();
   const [searchOpen, setSearchOpen] = useState(false);
 

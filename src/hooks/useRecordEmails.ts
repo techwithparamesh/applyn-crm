@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/lib/api';
 import { SyncedEmail } from '@/lib/email-sync-types';
 import { useToast } from '@/hooks/use-toast';
 
@@ -14,80 +14,57 @@ export function useRecordEmails(recordId: string) {
       setLoading(false);
       return;
     }
-
     setLoading(true);
-    
-    // Get email IDs linked to this record
-    const { data: links, error: linksError } = await supabase
-      .from('email_record_links')
-      .select('email_id')
-      .eq('record_id', recordId);
-
-    if (linksError) {
-      console.error('Error fetching email links:', linksError);
-      setLoading(false);
-      return;
-    }
-
-    if (!links || links.length === 0) {
+    const { data: links, error: linksError } = await api.get('/api/email_record_links', { record_id: recordId });
+    if (linksError || !links || (links as any[]).length === 0) {
       setEmails([]);
       setLoading(false);
       return;
     }
-
-    const emailIds = links.map(l => l.email_id);
-
-    // Fetch the actual emails
-    const { data: emailsData, error: emailsError } = await supabase
-      .from('emails')
-      .select('*')
-      .in('id', emailIds)
-      .order('sent_at', { ascending: false });
-
-    if (emailsError) {
-      console.error('Error fetching emails:', emailsError);
-      toast({ title: 'Error', description: 'Failed to load emails', variant: 'destructive' });
-    } else {
-      setEmails((emailsData || []) as unknown as SyncedEmail[]);
+    const emailIds = (links as any[]).map((l: any) => l.email_id);
+    const emailsList: SyncedEmail[] = [];
+    for (const eid of emailIds) {
+      const { data: emailData } = await api.get('/api/emails', { id: eid });
+      if (emailData) emailsList.push(emailData as SyncedEmail);
     }
+    emailsList.sort((a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime());
+    setEmails(emailsList);
     setLoading(false);
-  }, [recordId, toast]);
+  }, [recordId]);
 
-  useEffect(() => { fetchEmails(); }, [fetchEmails]);
+  useEffect(() => {
+    fetchEmails();
+  }, [fetchEmails]);
 
-  const linkEmailToRecord = useCallback(async (emailId: string, moduleName: string) => {
-    const { error } = await supabase
-      .from('email_record_links')
-      .insert({
+  const linkEmailToRecord = useCallback(
+    async (emailId: string, moduleName: string) => {
+      const { error } = await api.post('/api/email_record_links', {
         email_id: emailId,
         record_id: recordId,
         module_name: moduleName,
       });
+      if (error) {
+        toast({ title: 'Error', description: 'Failed to link email', variant: 'destructive' });
+        return false;
+      }
+      fetchEmails();
+      return true;
+    },
+    [recordId, fetchEmails, toast]
+  );
 
-    if (error) {
-      toast({ title: 'Error', description: 'Failed to link email', variant: 'destructive' });
-      return false;
-    }
-    
-    fetchEmails();
-    return true;
-  }, [recordId, fetchEmails, toast]);
-
-  const unlinkEmail = useCallback(async (emailId: string) => {
-    const { error } = await supabase
-      .from('email_record_links')
-      .delete()
-      .eq('email_id', emailId)
-      .eq('record_id', recordId);
-
-    if (error) {
-      toast({ title: 'Error', description: 'Failed to unlink email', variant: 'destructive' });
-      return false;
-    }
-    
-    fetchEmails();
-    return true;
-  }, [recordId, fetchEmails, toast]);
+  const unlinkEmail = useCallback(
+    async (emailId: string) => {
+      const { error } = await api.delete('/api/email_record_links', { email_id: emailId, record_id: recordId });
+      if (error) {
+        toast({ title: 'Error', description: 'Failed to unlink email', variant: 'destructive' });
+        return false;
+      }
+      fetchEmails();
+      return true;
+    },
+    [recordId, fetchEmails, toast]
+  );
 
   return { emails, loading, refetch: fetchEmails, linkEmailToRecord, unlinkEmail };
 }
@@ -97,16 +74,12 @@ export function useActiveEmailAccount() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase
-      .from('email_accounts')
-      .select('id, email_address, provider')
-      .eq('is_active', true)
-      .limit(1)
-      .maybeSingle()
-      .then(({ data }) => {
-        setAccount(data);
-        setLoading(false);
-      });
+    api.get('/api/email_accounts').then(({ data }) => {
+      const list = (data || []) as any[];
+      const active = list.find((a: any) => a.is_active);
+      setAccount(active ? { id: active.id, email_address: active.email_address, provider: active.provider } : null);
+      setLoading(false);
+    });
   }, []);
 
   return { account, loading };
