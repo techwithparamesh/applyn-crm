@@ -12,7 +12,7 @@ This Express server exposes a REST API that uses **MySQL** instead of Supabase f
 2. **Create the MySQL database** and run the schema:
    ```bash
    mysql -u root -p -e "CREATE DATABASE crm CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-   mysql -u root -p crm < database/mysql_schema.sql
+   mysql -u root -p crm < database/setup.sql
    ```
 
 3. **Configure environment** (project root `.env` or `server/.env`):

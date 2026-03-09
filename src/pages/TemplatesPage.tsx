@@ -345,8 +345,13 @@ export default function TemplatesPage() {
       </div>
 
       {filtered.length === 0 && !loadingTemplates && (
-        <div className="text-center py-12 text-muted-foreground">
-          No templates match your search. Try a different category or search term.
+        <div className="text-center py-12 text-muted-foreground space-y-2">
+          <p>No templates match your search. Try a different category or search term.</p>
+          {categoryFilter !== "all" && (
+            <Button variant="outline" size="sm" onClick={() => setCategoryFilter("all")}>
+              Show all categories
+            </Button>
+          )}
         </div>
       )}
 

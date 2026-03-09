@@ -1,6 +1,7 @@
--- Applyn CRM - MySQL 8+ Schema
--- Converted from PostgreSQL/Supabase. RLS removed; enforce tenant_id in application queries.
--- UUIDs stored as CHAR(36). JSON columns use MySQL JSON type.
+-- Applyn CRM - Database setup (single file: schema + seed)
+-- Create DB:  mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS crm CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+-- Run:       mysql -u root -p crm < database/setup.sql
+-- Safe to re-run. Contains all tables and initial seed data.
 
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
@@ -521,6 +522,54 @@ CREATE TABLE IF NOT EXISTS reports (
 );
 
 -- ---------------------------------------------------------------------------
+-- Web Forms (form builder)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS web_forms (
+  id VARCHAR(64) PRIMARY KEY,
+  tenant_id VARCHAR(64) NOT NULL DEFAULT 't1',
+  module_id VARCHAR(64) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  public_slug VARCHAR(255) NULL,
+  success_message TEXT NULL,
+  redirect_url VARCHAR(2048) NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 0,
+  enable_recaptcha TINYINT(1) NOT NULL DEFAULT 0,
+  webhook_url VARCHAR(2048) NULL,
+  fields_json JSON NOT NULL,
+  sections_json JSON NULL,
+  layout_order JSON NULL,
+  submission_behavior_json JSON NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_web_forms_tenant (tenant_id),
+  INDEX idx_web_forms_module (module_id)
+);
+
+CREATE TABLE IF NOT EXISTS form_sections (
+  id CHAR(36) PRIMARY KEY,
+  form_id VARCHAR(64) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  description TEXT NULL,
+  layout VARCHAR(32) NOT NULL DEFAULT 'single',
+  order_index INT NOT NULL DEFAULT 0,
+  collapsible TINYINT(1) DEFAULT 0,
+  border TINYINT(1) DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_form_sections_form (form_id)
+);
+
+CREATE TABLE IF NOT EXISTS form_fields (
+  id CHAR(36) PRIMARY KEY,
+  form_id VARCHAR(64) NOT NULL,
+  field_id CHAR(36) NULL,
+  section_id CHAR(36) NULL,
+  order_index INT NOT NULL DEFAULT 0,
+  config_json JSON NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_form_fields_form (form_id),
+  INDEX idx_form_fields_section (section_id)
+);
+
+-- ---------------------------------------------------------------------------
 -- Templates
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS installed_templates (
@@ -689,11 +738,76 @@ CREATE TABLE IF NOT EXISTS whatsapp_messages (
 
 SET FOREIGN_KEY_CHECKS = 1;
 
--- Optional: seed default permissions (module/action pairs)
--- INSERT INTO permissions (id, module_name, action) SELECT UUID(), module, act FROM (
---   SELECT 'leads' AS module, 'view' AS act UNION SELECT 'leads','create' UNION SELECT 'leads','edit' UNION SELECT 'leads','delete' UNION SELECT 'leads','export' UNION SELECT 'leads','import'
---   UNION SELECT 'contacts','view' UNION SELECT 'contacts','create' UNION SELECT 'contacts','edit' UNION SELECT 'contacts','delete' UNION SELECT 'contacts','export' UNION SELECT 'contacts','import'
---   UNION SELECT 'deals','view' UNION SELECT 'deals','create' UNION SELECT 'deals','edit' UNION SELECT 'deals','delete' UNION SELECT 'deals','export' UNION SELECT 'deals','import'
---   UNION SELECT 'tasks','view' UNION SELECT 'tasks','create' UNION SELECT 'tasks','edit' UNION SELECT 'tasks','delete' UNION SELECT 'tasks','export' UNION SELECT 'tasks','import'
---   UNION SELECT 'companies','view' UNION SELECT 'companies','create' UNION SELECT 'companies','edit' UNION SELECT 'companies','delete' UNION SELECT 'companies','export' UNION SELECT 'companies','import'
--- ) t;
+-- =============================================================================
+-- SEED DATA (idempotent: safe to re-run)
+-- =============================================================================
+
+-- Template categories
+INSERT IGNORE INTO template_categories (id, name, icon, order_index) VALUES
+('c1000001-0000-4000-8000-000000000001', 'Sales', 'TrendingUp', 0),
+('c1000002-0000-4000-8000-000000000002', 'Healthcare', 'Heart', 1),
+('c1000003-0000-4000-8000-000000000003', 'Real Estate', 'Home', 2),
+('c1000004-0000-4000-8000-000000000004', 'Education', 'GraduationCap', 3),
+('c1000005-0000-4000-8000-000000000005', 'Marketing', 'Megaphone', 4),
+('c1000006-0000-4000-8000-000000000006', 'Finance', 'DollarSign', 5);
+
+-- Sales CRM template (marketplace)
+INSERT IGNORE INTO crm_templates (id, name, category_id, description, icon, modules_count, is_public) VALUES
+('t1000001-0000-4000-8000-000000000001', 'Sales CRM', 'c1000001-0000-4000-8000-000000000001', 'Leads, Contacts, Deals and pipeline', 'TrendingUp', 3, 1);
+
+INSERT IGNORE INTO template_modules (id, template_id, name, slug, icon, color, description, order_index) VALUES
+('m1000001-0000-4000-8000-000000000001', 't1000001-0000-4000-8000-000000000001', 'Leads', 'leads', 'Users', '#7C3AED', 'Track leads', 0),
+('m1000002-0000-4000-8000-000000000002', 't1000001-0000-4000-8000-000000000001', 'Contacts', 'contacts', 'Contact', '#2563EB', 'Contact database', 1),
+('m1000003-0000-4000-8000-000000000003', 't1000001-0000-4000-8000-000000000001', 'Deals', 'deals', 'Handshake', '#16A34A', 'Deals pipeline', 2);
+
+INSERT IGNORE INTO template_fields (id, template_module_id, name, label, type, required, order_index) VALUES
+('f1000001-0000-4000-8000-000000000001', 'm1000001-0000-4000-8000-000000000001', 'full_name', 'Full Name', 'text', 1, 0),
+('f1000002-0000-4000-8000-000000000002', 'm1000001-0000-4000-8000-000000000001', 'email', 'Email', 'email', 1, 1),
+('f1000003-0000-4000-8000-000000000003', 'm1000001-0000-4000-8000-000000000001', 'phone', 'Phone', 'phone', 0, 2),
+('f1000004-0000-4000-8000-000000000004', 'm1000002-0000-4000-8000-000000000002', 'name', 'Name', 'text', 1, 0),
+('f1000005-0000-4000-8000-000000000005', 'm1000002-0000-4000-8000-000000000002', 'email', 'Email', 'email', 1, 1),
+('f1000006-0000-4000-8000-000000000006', 'm1000003-0000-4000-8000-000000000003', 'deal_name', 'Deal Name', 'text', 1, 0),
+('f1000007-0000-4000-8000-000000000007', 'm1000003-0000-4000-8000-000000000003', 'amount', 'Amount', 'currency', 1, 1),
+('f1000008-0000-4000-8000-000000000008', 'm1000003-0000-4000-8000-000000000003', 'stage', 'Stage', 'select', 1, 2);
+
+INSERT IGNORE INTO template_pipelines (id, template_module_id, name) VALUES
+('p1000001-0000-4000-8000-000000000001', 'm1000003-0000-4000-8000-000000000003', 'Sales Pipeline');
+
+INSERT IGNORE INTO template_pipeline_stages (id, pipeline_id, name, color, order_index) VALUES
+('s1000001-0000-4000-8000-000000000001', 'p1000001-0000-4000-8000-000000000001', 'Lead', '#6B7280', 0),
+('s1000002-0000-4000-8000-000000000002', 'p1000001-0000-4000-8000-000000000001', 'Qualified', '#3B82F6', 1),
+('s1000003-0000-4000-8000-000000000003', 'p1000001-0000-4000-8000-000000000001', 'Proposal', '#8B5CF6', 2),
+('s1000004-0000-4000-8000-000000000004', 'p1000001-0000-4000-8000-000000000001', 'Negotiation', '#F59E0B', 3),
+('s1000005-0000-4000-8000-000000000005', 'p1000001-0000-4000-8000-000000000001', 'Closed Won', '#10B981', 4),
+('s1000006-0000-4000-8000-000000000006', 'p1000001-0000-4000-8000-000000000001', 'Closed Lost', '#EF4444', 5);
+
+-- Default CRM modules for tenant t1 (INSERT IGNORE = skips if already exist)
+SET @tenant_id = 't1';
+SET @mod_leads    = 'a1000001-0000-0000-0000-000000000001';
+SET @mod_contacts = 'a1000002-0000-0000-0000-000000000002';
+SET @mod_deals    = 'a1000003-0000-0000-0000-000000000003';
+SET @mod_tasks    = 'a1000004-0000-0000-0000-000000000004';
+
+INSERT IGNORE INTO modules (id, tenant_id, name, slug, icon, color, description, is_system, order_index) VALUES
+(@mod_leads,    @tenant_id, 'Leads',    'leads',    'Users',      '#7C3AED', 'Potential customers or opportunities', 1, 0),
+(@mod_contacts, @tenant_id, 'Contacts', 'contacts', 'Contact',    '#6366f1', 'People and companies', 1, 1),
+(@mod_deals,    @tenant_id, 'Deals',    'deals',    'Handshake',  '#10B981', 'Sales opportunities and pipeline', 1, 2),
+(@mod_tasks,    @tenant_id, 'Tasks',    'tasks',    'CheckSquare', '#F59E0B', 'To-dos and follow-ups', 1, 3);
+
+-- Default fields for above modules (run once; re-run adds duplicate fields)
+INSERT INTO module_fields (id, module_id, tenant_id, name, label, field_type, is_required, options_json, order_index) VALUES
+(REPLACE(UUID(),'-',''), @mod_leads, @tenant_id, 'full_name', 'Full Name', 'text', 1, NULL, 0),
+(REPLACE(UUID(),'-',''), @mod_leads, @tenant_id, 'email', 'Email', 'email', 1, NULL, 1),
+(REPLACE(UUID(),'-',''), @mod_leads, @tenant_id, 'phone', 'Phone', 'phone', 0, NULL, 2),
+(REPLACE(UUID(),'-',''), @mod_leads, @tenant_id, 'company', 'Company', 'text', 0, NULL, 3),
+(REPLACE(UUID(),'-',''), @mod_leads, @tenant_id, 'source', 'Source', 'select', 0, CAST('["Website","Referral","Cold Call","Other"]' AS JSON), 4),
+(REPLACE(UUID(),'-',''), @mod_contacts, @tenant_id, 'full_name', 'Full Name', 'text', 1, NULL, 0),
+(REPLACE(UUID(),'-',''), @mod_contacts, @tenant_id, 'email', 'Email', 'email', 1, NULL, 1),
+(REPLACE(UUID(),'-',''), @mod_contacts, @tenant_id, 'phone', 'Phone', 'phone', 0, NULL, 2),
+(REPLACE(UUID(),'-',''), @mod_deals, @tenant_id, 'name', 'Deal Name', 'text', 1, NULL, 0),
+(REPLACE(UUID(),'-',''), @mod_deals, @tenant_id, 'amount', 'Amount', 'currency', 0, NULL, 1),
+(REPLACE(UUID(),'-',''), @mod_deals, @tenant_id, 'stage', 'Stage', 'select', 0, CAST('["New","Qualified","Proposal","Negotiation","Closed Won","Closed Lost"]' AS JSON), 2),
+(REPLACE(UUID(),'-',''), @mod_deals, @tenant_id, 'close_date', 'Close Date', 'date', 0, NULL, 3),
+(REPLACE(UUID(),'-',''), @mod_tasks, @tenant_id, 'subject', 'Subject', 'text', 1, NULL, 0),
+(REPLACE(UUID(),'-',''), @mod_tasks, @tenant_id, 'due_date', 'Due Date', 'date', 0, NULL, 1),
+(REPLACE(UUID(),'-',''), @mod_tasks, @tenant_id, 'status', 'Status', 'select', 0, CAST('["Pending","In Progress","Completed"]' AS JSON), 2);

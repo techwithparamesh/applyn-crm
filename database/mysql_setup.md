@@ -19,19 +19,19 @@ USE crm;
 
 ---
 
-## 2. Run the schema
+## 2. Run the schema and seed
 
-Apply the schema file (run from the project root):
+Apply the single setup file (run from the project root):
 
 ```bash
-mysql -u root -p crm < database/mysql_schema.sql
+mysql -u root -p crm < database/setup.sql
 ```
 
 Or from the MySQL shell:
 
 ```sql
 USE crm;
-SOURCE /path/to/applyn-crm/database/mysql_schema.sql;
+SOURCE /path/to/applyn-crm/database/setup.sql;
 ```
 
 ---
@@ -266,4 +266,4 @@ The frontend uses the **Node/MySQL API** for all data access. The backend (e.g. 
 4. Enforces tenant isolation on every query using the resolved `tenant_id`.
 5. Implements `search_records` and `check_permission` logic as described in sections 6 and 7.
 
-The provided **mysql_schema.sql** and this guide give you the schema and patterns; the actual API layer and replacement of Supabase client calls in the frontend are left to your stack and deployment choices.
+The provided **setup.sql** and this guide give you the schema and patterns; the actual API layer and replacement of Supabase client calls in the frontend are left to your stack and deployment choices.

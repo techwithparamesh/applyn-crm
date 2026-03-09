@@ -41,7 +41,12 @@ export default function SignupPage() {
           password,
         }),
       });
-      const data = await res.json();
+      let data: { error?: string; token?: string; user?: unknown; tenant?: unknown } = {};
+      try {
+        data = await res.json();
+      } catch {
+        data = { error: res.statusText || 'Invalid response' };
+      }
       setLoading(false);
       if (!res.ok) {
         toast({ title: 'Signup failed', description: data.error || res.statusText, variant: 'destructive' });
@@ -50,7 +55,8 @@ export default function SignupPage() {
       signIn(data.token, data.user, data.tenant);
     } catch (err) {
       setLoading(false);
-      toast({ title: 'Signup failed', description: 'Network error', variant: 'destructive' });
+      const msg = err instanceof Error ? err.message : 'Network error';
+      toast({ title: 'Signup failed', description: msg, variant: 'destructive' });
     }
   };
 

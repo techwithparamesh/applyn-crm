@@ -3,7 +3,7 @@
  * Use with Express (or similar). Requires mysql2 and env: MYSQL_*, or DATABASE_URL.
  *
  * Authenticates via X-API-Key header, then CRUD on crm_records scoped by tenant_id.
- * Run schema first: mysql -u root -p crm < ../mysql_schema.sql
+ * Run schema first: mysql -u root -p crm < ../setup.sql
  */
 
 const mysql = require('mysql2/promise');

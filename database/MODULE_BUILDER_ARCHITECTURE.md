@@ -80,7 +80,7 @@ Field names in `values` match **module_fields.name** for that module. The app va
 
 ## 7. Default modules (seed)
 
-When a workspace is created (or via **seed_default_modules.sql**), seed:
+When a workspace is created (or via **setup.sql** seed section), seed:
 
 - **Leads** — full_name, email, phone, company, source  
 - **Contacts** — full_name, email, phone  
@@ -93,9 +93,7 @@ Each has default fields; tenants can add more modules and fields.
 
 ## 8. Files reference
 
-- **Schema:** `database/mysql_schema.sql`  
-- **Migration (settings_json, form tables):** `database/migrations/001_add_field_settings_and_form_tables.sql`  
-- **Default seed:** `database/seed_default_modules.sql`  
+- **Schema + seed:** `database/setup.sql` (single file)
 - **Module Builder UI:** `src/pages/settings/ModuleBuilderPage.tsx`  
 - **Field Builder:** `src/components/FieldBuilder.tsx`  
 - **Form Builder:** `src/pages/FormBuilderPage.tsx`  
